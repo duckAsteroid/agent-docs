@@ -1,0 +1,29 @@
+plugins {
+    id 'java-gradle-plugin'
+    id 'maven-publish'
+}
+
+dependencies {
+    testImplementation gradleTestKit()
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+gradlePlugin {
+    plugins {
+        agentDocsPublish {
+            id = 'io.github.duckasteroid.agent-docs.publish'
+            implementationClass = 'io.github.duckasteroid.agentdocs.publish.AgentDocsPublishPlugin'
+            displayName = 'Agent Docs Publish Plugin'
+            description = 'Packages curated agent docs into a sidecar archive.'
+        }
+    }
+}

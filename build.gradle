@@ -1,0 +1,24 @@
+plugins {
+    id 'base'
+    id 'pl.allegro.tech.build.axion-release' version '1.18.16'
+}
+
+group = 'io.github.duckasteroid.agentdocs'
+
+scmVersion {
+    tag {
+        prefix = 'v'
+        versionSeparator = ''
+    }
+}
+
+version = scmVersion.version
+
+allprojects {
+    group = rootProject.group
+    version = rootProject.version
+
+    repositories {
+        mavenCentral()
+    }
+}

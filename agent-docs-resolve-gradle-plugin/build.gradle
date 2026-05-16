@@ -1,0 +1,28 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+dependencies {
+    testImplementation gradleTestKit()
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+gradlePlugin {
+    plugins {
+        agentDocsResolve {
+            id = 'io.github.duckasteroid.agent-docs.resolve'
+            implementationClass = 'io.github.duckasteroid.agentdocs.resolve.AgentDocsResolvePlugin'
+            displayName = 'Agent Docs Resolve Plugin'
+            description = 'Writes a starter local index for resolved dependencies.'
+        }
+    }
+}

@@ -1,0 +1,23 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation 'io.modelcontextprotocol.sdk:mcp-core:1.1.2'
+    implementation 'io.modelcontextprotocol.sdk:mcp-json-jackson2:1.1.2'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+application {
+    mainClass = 'io.github.duckasteroid.agentdocs.mcp.AgentDocsMcpApplication'
+}
