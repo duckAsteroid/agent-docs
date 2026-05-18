@@ -18,12 +18,16 @@ java {
 }
 
 gradlePlugin {
+    website = 'https://github.com/duckasteroid/agent-docs'
+    vcsUrl  = 'https://github.com/duckasteroid/agent-docs'
+
     plugins {
         agentDocsPublish {
             id = 'io.github.duckasteroid.agent-docs.publish'
             implementationClass = 'io.github.duckasteroid.agentdocs.publish.AgentDocsPublishPlugin'
             displayName = 'Agent Docs Publish Plugin'
-            description = 'Packages curated agent docs into a sidecar archive.'
+            tags  = ['AI Agent', 'documentation', 'publishing']
+            description = 'Packages curated agent docs for a library into a sidecar archive.'
         }
     }
 }
