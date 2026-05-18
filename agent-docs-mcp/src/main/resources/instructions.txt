@@ -1,0 +1,2 @@
+Provides read-only access to LLM usage instructions for Java libraries.
+

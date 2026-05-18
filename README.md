@@ -8,7 +8,7 @@ If you are an AI coding agent, read `AGENTS.md` first for the repo-specific work
 
 ```bash
 ./gradlew build
-./gradlew :samples:consumer-sample:run
+./gradlew :agent-docs-mcp:run
 ```
 
 ## Versioning and releases
@@ -21,12 +21,9 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 
 ## Modules
 
-- `agent-docs-spec` - shared contract types for manifests and cache/index metadata
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
-- `agent-docs-resolve-gradle-plugin` - starter Gradle plugin for inspecting a resolved classpath, attempting to resolve `agent-docs` sidecars for direct `implementation`/`api` dependencies, caching found sidecars in a local Maven-style repository (`~/.agent-docs/repository` by default, override via `-DagentDocs.localRepository=...` or `AGENT_DOCS_LOCAL_REPOSITORY`), and writing a local index scaffold
-- `agent-docs-mcp` - minimal application entry point for reading the local resolver output
-- `samples/producer-sample` - sample library producer
-- `samples/consumer-sample` - sample consumer application
+- `agent-docs-resolve-gradle-plugin` - starter Gradle plugin for inspecting a resolved classpath, attempting to resolve `agent-docs` sidecars for direct `implementation`/`api` dependencies, and caching found sidecars in a local Maven-style repository (`~/.agent-docs/repository` by default, override via `-DagentDocs.localRepository=...` or `AGENT_DOCS_LOCAL_REPOSITORY`)
+- `agent-docs-mcp` - minimal STDIO MCP server that serves markdown via `agentdocs://{groupId}/{artifactId}/{version}/{path}` and `get_agent_docs`, reading only from the local agent-docs repository
 - `docs` - architecture and repository notes
 
 

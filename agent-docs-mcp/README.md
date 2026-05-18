@@ -28,11 +28,16 @@ Run with repository override:
 
 - `initialize`
 - `ping`
+- `resources/list`
+- `resources/read`
 - `tools/list`
 - `tools/call`
 
+Resource template:
+
+- `agentdocs://{groupId}/{artifactId}/{version}/{path}`
+
 Tools:
 
-- `agentdocs.resolve_paths`
-- `agentdocs.list_cached_sidecars`
+- `get_agent_docs`
 

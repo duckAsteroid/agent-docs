@@ -1,13 +1,16 @@
 package io.github.duckasteroid.agentdocs.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.duckasteroid.agentdocs.mcp.tools.GetAgentDocs;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,70 +19,95 @@ class AgentDocsMcpApplicationTest {
     Path tempDir;
 
     @Test
-    void runtimePathsUseDefaultRepositoryUnderUserHomeWhenNoOverridesProvided() {
-        Properties properties = new Properties();
-        properties.setProperty("user.home", "/tmp/test-home");
+    void serverVersionIsResolvedFromClasspathResource() {
+        String version = AgentDocsMcpApplication.resolveServerVersion();
 
-        AgentDocsRepository repository = AgentDocsRepository.resolve(
-                Map.of(),
-                properties);
-
-        assertEquals(Path.of("/tmp/test-home/.agent-docs/repository"), repository.repositoryDirectory());
-        assertEquals(Path.of("/tmp/test-home/.agent-docs"), repository.baseDirectory());
+        assertTrue(!version.isBlank());
+        assertTrue(!"unknown".equals(version));
     }
 
     @Test
-    void runtimePathsPreferSystemPropertyForRepositoryOverride() {
-        Properties properties = new Properties();
-        properties.setProperty("user.home", "/tmp/test-home");
-        properties.setProperty("agentDocs.localRepository", "/opt/agent-docs/repository");
+    void serverInstructionsAreResolvedFromClasspathResource() {
+        String instructions = AgentDocsMcpApplication.resolveServerInstructions();
 
-        AgentDocsRepository repository = AgentDocsRepository.resolve(
-                Map.of("AGENT_DOCS_LOCAL_REPOSITORY", "/ignored/from-env"),
-                properties);
-
-        assertEquals(Path.of("/opt/agent-docs/repository"), repository.repositoryDirectory());
-        assertEquals(Path.of("/opt/agent-docs"), repository.baseDirectory());
+        assertTrue(!instructions.isBlank());
+        assertTrue(instructions.contains("read-only access"));
     }
 
     @Test
-    void runtimePathsIgnoreCliArgumentsForRepositoryResolution() {
-        Properties properties = new Properties();
-        properties.setProperty("user.home", "/tmp/test-home");
+    void toolsAreLoadedViaServiceLoader() {
+        List<String> toolNames = AgentDocsMcpApplication.loadTools().stream()
+                .map(AgentDocsTool::name)
+                .toList();
 
-        AgentDocsRepository repository = AgentDocsRepository.resolve(
-                Map.of(),
-                properties);
-
-        assertEquals(Path.of("/tmp/test-home/.agent-docs/repository"), repository.repositoryDirectory());
+        assertTrue(toolNames.contains("get_agent_docs"));
     }
 
     @Test
-    void listCachedSidecarsToolReturnsRepositoryRelativeSidecarPaths() throws IOException {
-        Path repositoryDirectory = tempDir.resolve(".agent-docs/repository");
-        Path sidecarA = repositoryDirectory.resolve("com/example/lib-a/1.0.0/lib-a-1.0.0-agent-docs.zip");
-        Path sidecarB = repositoryDirectory.resolve("org/acme/lib-b/2.1.0/lib-b-2.1.0-agent-docs.zip");
-        Files.createDirectories(sidecarA.getParent());
-        Files.createDirectories(sidecarB.getParent());
-        Files.writeString(sidecarA, "a");
-        Files.writeString(sidecarB, "b");
+    void getAgentDocsSchemaIsGeneratedFromDeclaredParameters() {
+        GetAgentDocs tool = new GetAgentDocs();
 
-        String text = ListCachedSidecarsTool.listCachedSidecars(repositoryDirectory);
+        String schema = tool.inputSchema();
 
-        assertTrue(text.contains("com/example/lib-a/1.0.0/lib-a-1.0.0-agent-docs.zip"));
-        assertTrue(text.contains("org/acme/lib-b/2.1.0/lib-b-2.1.0-agent-docs.zip"));
+        assertTrue(schema.contains("\"mavenGroupId\""));
+        assertTrue(schema.contains("\"mavenArtifactId\""));
+        assertTrue(schema.contains("\"mavenVersionId\""));
+        assertTrue(schema.contains("\"mavenCoordinates\""));
+        assertTrue(schema.contains("\"type\":\"string\""));
     }
 
     @Test
-    void resolvePathsTextIncludesAbsoluteBaseAndRepository() {
-        AgentDocsRepository repository = new AgentDocsRepository(
-                Path.of("/tmp/.agent-docs"),
-                Path.of("/tmp/.agent-docs/repository"));
+    void validateAndConvertArgumentsMapsStringKeysToMcpParameters() {
+        GetAgentDocs tool = new GetAgentDocs();
 
-        String text = new ResolvePathsTool().execute(repository, Map.of());
+        Map<McpParameter<?>, Object> converted = tool.validateAndConvertArguments(
+                Map.of("mavenCoordinates", "com.example:lib:1.0.0"));
 
-        assertTrue(text.contains("baseDirectory=/tmp/.agent-docs"));
-        assertTrue(text.contains("repositoryDirectory=/tmp/.agent-docs/repository"));
+        McpParameter<?> coordinates = tool.parameters().stream()
+                .filter(parameter -> parameter.name().equals("mavenCoordinates"))
+                .findFirst()
+                .orElse(null);
+
+        assertNotNull(coordinates);
+        assertEquals(1, converted.size());
+        assertEquals("com.example:lib:1.0.0", converted.get(coordinates));
+    }
+
+    @Test
+    void executeToolRejectsUnknownArguments() {
+        String text = AgentDocsMcpApplication.executeTool(
+                new GetAgentDocs(),
+                new AgentDocsRepository(Path.of("/tmp/.agent-docs"), Path.of("/tmp/.agent-docs/repository")),
+                Map.of("unexpected", "value"));
+
+        assertTrue(text.contains("Invalid arguments"));
+        assertTrue(text.contains("Unknown argument"));
+    }
+
+    @Test
+    void executeToolUsesConvertedArgumentsForToolExecution() {
+        String text = AgentDocsMcpApplication.executeTool(
+                new GetAgentDocs(),
+                new AgentDocsRepository(Path.of("/tmp/.agent-docs"), Path.of("/tmp/.agent-docs/repository")),
+                Map.of("mavenCoordinates", "com.example:lib:1.0.0"));
+
+        assertTrue(text.contains("No agent documentation available"));
+    }
+
+    @Test
+    void readResourceReturnsMarkdownWithRewrittenLinks() throws IOException {
+        AgentDocsRepository repository = new AgentDocsRepository(tempDir.resolve(".agent-docs"), tempDir.resolve(".agent-docs/repository"));
+        Path docDirectory = repository.repositoryDirectory().resolve(Path.of("com.example", "demo", "1.0.0", "topics"));
+        Files.createDirectories(docDirectory);
+        Files.writeString(docDirectory.resolve("overview.md"), "See [Setup](../setup.md).\n");
+
+        String uri = "agentdocs://com.example/demo/1.0.0/topics/overview.md";
+        McpSchema.ReadResourceResult result = AgentDocsMcpApplication.readResource(repository, uri);
+
+        assertEquals(1, result.contents().size());
+        McpSchema.TextResourceContents content = (McpSchema.TextResourceContents) result.contents().get(0);
+        assertEquals("text/markdown", content.mimeType());
+        assertTrue(content.text().contains("agentdocs://com.example/demo/1.0.0/setup.md"));
     }
 }
 

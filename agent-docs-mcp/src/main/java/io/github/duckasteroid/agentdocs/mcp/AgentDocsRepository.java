@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Properties;
 
-final class AgentDocsRepository {
+public final class AgentDocsRepository {
     private static final String LOCAL_REPOSITORY_PROPERTY;
     private static final String LOCAL_REPOSITORY_ENV;
 
@@ -46,7 +46,7 @@ final class AgentDocsRepository {
         return baseDirectory;
     }
 
-    Path repositoryDirectory() {
+    public Path repositoryDirectory() {
         return repositoryDirectory;
     }
 

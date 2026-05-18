@@ -1,5 +1,7 @@
 # Agent Docs Toolchain Proposal
 
+> Status note (current implementation): this document captures the original proposal and rationale. For the current runtime contract, prefer `README.md`, `AGENTS.md`, `agent-docs-publish-gradle-plugin/README.md`, and `agent-docs-mcp/README.md`.
+
 ## Summary
 
 This project proposes a reusable toolchain for publishing, resolving, and exposing **agent-oriented documentation** for binary dependencies.
@@ -38,9 +40,9 @@ Three separate components will be developed:
 1. **Publisher plugin**
    - Generates and publishes `agent-docs` sidecar artifacts from the library project.
 2. **Resolver plugin**
-   - Resolves `agent-docs` sidecars for dependencies in consuming projects and stores them in the local Gradle cache with a local index.
+   - Resolves `agent-docs` sidecars for dependencies in consuming projects and stores them in a local Maven-style repository.
 3. **MCP component**
-   - Reads the local cache and index and exposes the resolved documentation to coding agents via MCP.
+   - Reads local sidecar content and exposes resolved documentation to coding agents via MCP resources and tools.
 
 ## Key Architectural Decisions
 
@@ -59,7 +61,7 @@ Reasons:
 
 The resolver and MCP components must not call each other directly.
 
-They communicate **only via the local Gradle cache and a stable on-disk index**.
+They communicate **only via local filesystem artifacts produced by the resolver**.
 
 This means:
 
@@ -86,7 +88,7 @@ The publisher plugin should support generated or curated content from the librar
 
 - publish `agent-docs` artifacts from library projects
 - resolve matching `agent-docs` artifacts in consumer projects
-- cache and index resolved sidecars locally
+- cache resolved sidecars locally
 - expose cached sidecars through MCP
 - support Maven/Gradle repositories, including authenticated repositories such as GitHub Packages
 
@@ -102,28 +104,17 @@ The publisher plugin should support generated or curated content from the librar
 
 ```text
 agent-docs/
-  agent-docs-spec/
   agent-docs-publish-gradle-plugin/
   agent-docs-resolve-gradle-plugin/
   agent-docs-mcp/
-  samples/
-    producer-sample/
-    consumer-sample/
   docs/
 ```
 
 ## Component Responsibilities
 
-## `agent-docs-spec`
+## Shared contract
 
-Owns the shared contract for:
-
-- archive layout
-- `manifest.json` schema
-- local resolver index schema
-- versioning rules for the format
-
-This module is the contract boundary for the rest of the system.
+In the current implementation, the contract is documented across repo docs and plugin/module READMEs rather than a dedicated `agent-docs-spec` module.
 
 ## `agent-docs-publish-gradle-plugin`
 
@@ -149,7 +140,7 @@ Responsibilities:
 - inspect resolved dependencies in a consumer project
 - attempt to resolve a matching `agent-docs` sidecar for each dependency
 - store sidecars in a deterministic local cache
-- write a stable local index for later lookup by GAV and metadata
+- preserve a deterministic local repository layout for later lookup by GAV
 
 Important constraint:
 
@@ -159,9 +150,9 @@ This plugin is the only part that should need repository credentials or artifact
 
 Responsibilities:
 
-- read the local cache and local index only
-- answer library/doc lookup questions for agents
-- expose structured MCP tools for query and retrieval
+- read local resolver-managed repository content only
+- answer library/doc lookup questions for agents from local files only
+- expose resource reads via `agentdocs://{groupId}/{artifactId}/{version}/{path}` and focused MCP tools for retrieval
 
 Important constraint:
 
@@ -176,76 +167,21 @@ Suggested initial shape:
 - artifact classifier or equivalent sidecar named `agent-docs`
 - archive format: `.zip`
 
-Suggested logical contents:
+Current implementation shape (simplified):
 
 ```text
 agent-docs.zip
-  manifest.json
-  topics/
-    overview.md
-    usage-patterns.md
-    lifecycle.md
-    errors.md
-    migrations.md
-  examples/
-    example-1.md
-  symbols/
-    index.json
+  agents.md
+  ...additional markdown/docs content...
 ```
 
-## Manifest Requirements
+## Current Runtime Contract
 
-`manifest.json` should at least contain:
-
-- format version
-- group
-- artifact
-- version
-- artifact coordinates of the binary this docs package describes
-- package/topic inventory
-- optional symbol inventory
-- optional source/javadoc references
-- creation metadata
-
-## Local Cache Contract
-
-The cache/index boundary between resolver and MCP should be explicit and stable.
-
-Suggested model:
-
-- resolved sidecar archive stored in local cache
-- extracted metadata stored in a predictable local layout
-- one machine-readable index file mapping GAV to local cached content
-
-Example logical fields for the local index:
-
-- `group`
-- `artifact`
-- `version`
-- `gav`
-- `cachePath`
-- `manifestPath`
-- `resolvedAt`
-- `formatVersion`
-
-The MCP component should rely only on this local contract.
-
-## MCP Tool Surface
-
-The MCP server should expose a small, stable set of tools.
-
-Suggested initial tools:
-
-1. `find_library`
-   - Resolve a library by GAV and return manifest metadata.
-2. `search_docs`
-   - Full-text search across locally resolved docs.
-3. `get_topic`
-   - Return a named topic such as overview, lifecycle, or errors.
-4. `get_symbol_docs`
-   - Return docs for a class or method when symbol metadata exists.
-5. `list_examples`
-   - Return example topics or recipes for a library.
+- Publisher packages docs from a configured root (default `src/agentDocs`) into an `agent-docs` zip sidecar.
+- Publisher enforces exactly one `agents.md` entrypoint in docs root (case-insensitive in source, normalized in packaged output).
+- Resolver resolves and caches sidecar zips in a local Maven-style repository.
+- MCP serves markdown from local files using `agentdocs://{groupId}/{artifactId}/{version}/{path}` and supports `get_agent_docs` for entrypoint retrieval.
+- MCP does not perform remote dependency resolution.
 
 ## Gradle Integration Strategy
 
@@ -283,7 +219,6 @@ It also lets organizations publish private library guidance to internal consumer
 - exact publication mechanism: classifier only, variant metadata, or both
 - exact archive schema and versioning strategy
 - whether symbol-level mapping is required in v1
-- whether the resolver index should be global or per-project
 - how aggressively content should be normalized for token efficiency
 - what minimum authoring burden is acceptable for library teams
 
@@ -297,18 +232,18 @@ It also lets organizations publish private library guidance to internal consumer
 
 1. Define the spec:
    - sidecar archive shape
-   - `manifest.json`
-   - local cache/index contract
+   - `agents.md` entrypoint expectations
+   - resolver local repository contract used by MCP
 2. Build a minimal publisher plugin:
    - package curated markdown into `agent-docs.zip`
    - publish alongside a sample Java library
 3. Build a minimal resolver plugin:
-   - resolve sidecars for sample dependencies
-   - write local index
+   - resolve sidecars for dependencies
+   - cache sidecars in deterministic local repository layout
 4. Build a minimal MCP server:
-   - read local index
-   - support `find_library`, `search_docs`, and `get_topic`
-5. Add end-to-end sample projects and documentation
+   - read local repository only
+   - support `agentdocs://...` resource reads and `get_agent_docs`
+5. Add end-to-end documentation and compatibility tests
 
 ## Suggested New Repo README Opening
 
@@ -324,7 +259,7 @@ The important decisions already made are:
    - resolver Gradle plugin
    - MCP server
 3. Keep **resolver and MCP fully decoupled**.
-4. Use the **local Gradle cache plus stable on-disk index** as their only integration boundary.
+4. Use the **resolver-managed local repository layout** as their integration boundary.
 5. Prefer a **sidecar artifact** named `agent-docs`, aligned with the same dependency version as the binary artifact.
 6. Prefer **publish-time generation** of agent-ready docs from the library project.
 
