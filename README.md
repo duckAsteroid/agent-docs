@@ -26,6 +26,10 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 - `agent-docs-mcp` - minimal STDIO MCP server that serves markdown via `agentdocs://{groupId}/{artifactId}/{version}/{path}` and `get_agent_docs`, reading only from the local agent-docs repository
 - `docs` - architecture and repository notes
 
+## License
+
+This project is licensed under the MIT License. See `LICENSE`.
+
 
 The first scaffold keeps the resolver and MCP modules decoupled and mirrors the repository layout from the project proposal so implementation can grow in-place.
 
