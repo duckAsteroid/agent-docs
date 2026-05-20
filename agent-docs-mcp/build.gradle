@@ -46,5 +46,5 @@ java {
 }
 
 application {
-    mainClass = 'io.github.duckasteroid.agentdocs.mcp.AgentDocsMcpApplication'
+    mainClass = 'io.github.duckasteroid.agentdocs.mcp.Application'
 }

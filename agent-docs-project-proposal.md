@@ -152,7 +152,7 @@ Responsibilities:
 
 - read local resolver-managed repository content only
 - answer library/doc lookup questions for agents from local files only
-- expose resource reads via `agentdocs://{groupId}/{artifactId}/{version}/{path}` and focused MCP tools for retrieval
+- expose resource reads via `agentdocs:///{groupId}/{artifactId}/{version}/{path}` and focused MCP tools for retrieval
 
 Important constraint:
 
@@ -180,7 +180,7 @@ agent-docs.zip
 - Publisher packages docs from a configured root (default `src/agentDocs`) into an `agent-docs` zip sidecar.
 - Publisher enforces exactly one `agents.md` entrypoint in docs root (case-insensitive in source, normalized in packaged output).
 - Resolver resolves and caches sidecar zips in a local Maven-style repository.
-- MCP serves markdown from local files using `agentdocs://{groupId}/{artifactId}/{version}/{path}` and supports `get_agent_docs` for entrypoint retrieval.
+- MCP serves markdown from local files using `agentdocs:///{groupId}/{artifactId}/{version}/{path}` and supports `get_agent_docs` for entrypoint retrieval.
 - MCP does not perform remote dependency resolution.
 
 ## Gradle Integration Strategy

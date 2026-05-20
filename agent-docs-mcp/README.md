@@ -35,7 +35,7 @@ Run with repository override:
 
 Resource template:
 
-- `agentdocs://{groupId}/{artifactId}/{version}/{path}`
+- `agentdocs:///{groupId}/{artifactId}/{version}/{path}`
 
 Tools:
 

@@ -1,10 +1,10 @@
-package io.github.duckasteroid.agentdocs.mcp;
+package io.github.duckasteroid.agentdocs.mcp.tools;
 
 import java.util.Map;
 import java.util.Optional;
 
-public record McpParameter<T>(String name, Type<T> type, String description) {
-    public McpParameter {
+public record ToolParameter<T>(String name, Type<T> type, String description) {
+    public ToolParameter {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Parameter name must not be blank.");
         }
@@ -16,7 +16,7 @@ public record McpParameter<T>(String name, Type<T> type, String description) {
         }
     }
 
-    public Optional<T> extract(Map<McpParameter<?>, Object> args) {
+    public Optional<T> extract(Map<ToolParameter<?>, Object> args) {
         if (args == null || !args.containsKey(this)) {
             return Optional.empty();
         }

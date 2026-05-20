@@ -1,36 +1,39 @@
-package io.github.duckasteroid.agentdocs.mcp;
+package io.github.duckasteroid.agentdocs.mcp.tools;
 
+import io.github.duckasteroid.agentdocs.mcp.repo.Repository;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.spec.McpSchema;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
-public interface AgentDocsTool {
+import java.util.*;
+
+public interface Tool {
     String name();
 
     String description();
 
-    String execute(AgentDocsRepository repository, Map<McpParameter<?>, Object> arguments);
+    McpSchema.CallToolResult execute(Repository repository, Map<ToolParameter<?>, Object> arguments) throws ToolException;
 
-    List<McpParameter<?>> parameters();
+    List<ToolParameter<?>> parameters();
 
-    default Map<McpParameter<?>, Object> validateAndConvertArguments(Map<String, Object> arguments) {
+    default McpSchema.ToolAnnotations annotations(){
+        return new McpSchema.ToolAnnotations("x-safety", true, false, true, false, true);
+    }
+
+    default Map<ToolParameter<?>, Object> validateAndConvertArguments(Map<String, Object> arguments) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         if (safeArguments.isEmpty()) {
             return Map.of();
         }
 
-        Map<String, McpParameter<?>> parametersByName = new LinkedHashMap<>();
-        for (McpParameter<?> parameter : parameters()) {
+        Map<String, ToolParameter<?>> parametersByName = new LinkedHashMap<>();
+        for (ToolParameter<?> parameter : parameters()) {
             parametersByName.put(parameter.name(), parameter);
         }
 
-        Map<McpParameter<?>, Object> converted = new LinkedHashMap<>();
+        Map<ToolParameter<?>, Object> converted = new LinkedHashMap<>();
 
         for (Map.Entry<String, Object> entry : safeArguments.entrySet()) {
-            McpParameter<?> parameter = parametersByName.get(entry.getKey());
+            ToolParameter<?> parameter = parametersByName.get(entry.getKey());
             if (parameter == null) {
                 throw new IllegalArgumentException("Unknown argument: " + entry.getKey());
             }
@@ -46,10 +49,10 @@ public interface AgentDocsTool {
     }
 
     default String inputSchema() {
-        List<McpParameter<?>> parameters = parameters();
+        List<ToolParameter<?>> parameters = parameters();
         StringBuilder properties = new StringBuilder();
         for (int index = 0; index < parameters.size(); index++) {
-            McpParameter<?> parameter = parameters.get(index);
+            ToolParameter<?> parameter = parameters.get(index);
             if (index > 0) {
                 properties.append(',');
             }
@@ -67,6 +70,7 @@ public interface AgentDocsTool {
                 .name(name())
                 .description(description())
                 .inputSchema(jsonMapper, inputSchema())
+                .annotations(annotations())
                 .build();
     }
 

@@ -1,4 +1,4 @@
-package io.github.duckasteroid.agentdocs.mcp;
+package io.github.duckasteroid.agentdocs.mcp.repo;
 
 import com.vladsch.flexmark.ast.Link;
 import com.vladsch.flexmark.formatter.Formatter;
@@ -6,7 +6,7 @@ import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.ast.NodeVisitor;
 import com.vladsch.flexmark.util.ast.VisitHandler;
 import com.vladsch.flexmark.util.sequence.BasedSequence;
-import io.github.duckasteroid.agentdocs.mcp.tools.MavenCoordinates;
+import io.github.duckasteroid.agentdocs.mcp.MavenCoordinates;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -46,7 +46,7 @@ public final class MarkdownLinkRewriter {
                 || destination.startsWith("/")
                 || destination.startsWith("http://")
                 || destination.startsWith("https://")
-                || destination.startsWith(AgentDocsResourceResolver.RESOURCE_SCHEME)
+                || destination.startsWith(Repository.RESOURCE_SCHEME)
                 || destination.startsWith("mailto:")) {
             return destination;
         }
@@ -67,7 +67,7 @@ public final class MarkdownLinkRewriter {
             return destination;
         }
 
-        return AgentDocsResourceResolver.toResourceUri(coords.asPath(), resolved) + suffix;
+        return Repository.toResourceUri(coords.asPath(), resolved) + suffix;
     }
 }
 

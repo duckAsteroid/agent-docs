@@ -1,4 +1,4 @@
-package io.github.duckasteroid.agentdocs.mcp;
+package io.github.duckasteroid.agentdocs.mcp.tools;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
@@ -50,7 +50,7 @@ public class Type<T> {
         this.converter = converter;
     }
 
-    String jsonType() {
+    public String jsonType() {
         return jsonType;
     }
 

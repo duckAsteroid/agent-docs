@@ -1,4 +1,4 @@
-package io.github.duckasteroid.agentdocs.mcp.tools;
+package io.github.duckasteroid.agentdocs.mcp;
 
 import java.nio.file.Path;
 
@@ -18,5 +18,15 @@ public record MavenCoordinates(String groupId, String artifactId, String version
 
     public Path asPath() {
         return Path.of(groupId, artifactId, version);
+    }
+
+    public String asJson() {
+        return """
+                {
+                    "groupId": "%s",
+                    "artifactId": "%s",
+                    "version": "%s"
+                }
+                """.formatted(groupId, artifactId, version);
     }
 }

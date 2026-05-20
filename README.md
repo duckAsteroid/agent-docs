@@ -23,7 +23,7 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
 - `agent-docs-resolve-gradle-plugin` - starter Gradle plugin for inspecting a resolved classpath, attempting to resolve `agent-docs` sidecars for direct `implementation`/`api` dependencies, and caching found sidecars in a local Maven-style repository (`~/.agent-docs/repository` by default, override via `-DagentDocs.localRepository=...` or `AGENT_DOCS_LOCAL_REPOSITORY`)
-- `agent-docs-mcp` - minimal STDIO MCP server that serves markdown via `agentdocs://{groupId}/{artifactId}/{version}/{path}` and `get_agent_docs`, reading only from the local agent-docs repository
+- `agent-docs-mcp` - minimal STDIO MCP server that serves markdown via `agentdocs:///{groupId}/{artifactId}/{version}/{path}` and `get_agent_docs`, reading only from the local agent-docs repository
 - `docs` - architecture and repository notes
 
 ## License

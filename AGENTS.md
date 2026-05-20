@@ -14,7 +14,7 @@
 ## Repository structure that matters
 - `agent-docs-publish-gradle-plugin` packages docs from `src/agentDocs` into a sidecar zip and requires exactly one `agents.md` entrypoint (case-insensitive).
 - `agent-docs-resolve-gradle-plugin` resolves the configured classpath and caches `agent-docs` sidecars in a local Maven-style repository.
-- `agent-docs-mcp` serves docs from that local repository over MCP (STDIO), including `agentdocs://{groupId}/{artifactId}/{version}/{path}` resource reads and the `get_agent_docs` tool.
+- `agent-docs-mcp` serves docs from that local repository over MCP (STDIO), including `agentdocs:///{groupId}/{artifactId}/{version}/{path}` resource reads and the `get_agent_docs` tool.
 
 ## Current conventions
 - Java 21 everywhere; Gradle Groovy build scripts.
