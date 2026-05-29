@@ -26,7 +26,7 @@ gradlePlugin {
             implementationClass = 'io.github.duckasteroid.agentdocs.resolve.AgentDocsResolvePlugin'
             displayName = 'Agent Docs Resolve Plugin'
             tags  = ['AI Agent', 'documentation', 'publishing']
-            description = 'Creates an agent docs local repository for resolved Gradle dependencies. This is then suitable for use by the MCP tool to serve agent docs'
+            description = 'Resolves dependency sidecars, caches them locally, and generates agent skills in single-index, per-dependency, or threshold-based auto mode for GAV-organized docs resources'
         }
     }
 }
