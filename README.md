@@ -19,6 +19,25 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 - The computed root version is reused by all subprojects
 - Check the resolved version with `./gradlew currentVersion`
 
+## CI and release workflows
+
+GitHub Actions workflows live under `.github/workflows`.
+
+- `build.yml`: runs `clean check` on pushes and pull requests to `main`
+- `publish.yml`: on `v*` tags, validates publish secrets and runs `clean check publish publishPlugins`
+- `native-release.yml`: on `v*` tags (or manual dispatch), builds Graal native binaries for:
+  - Linux x64 (`ubuntu-latest`)
+  - Windows x64 (`windows-latest`)
+  - macOS x64 (`macos-13`)
+  - macOS arm64 (`macos-14`)
+
+For tag builds, `native-release.yml` also creates/updates the GitHub Release and uploads platform-specific binaries from `agent-docs-mcp` as assets named like:
+
+- `agent-docs-mcp-v1.2.3-linux-x64`
+- `agent-docs-mcp-v1.2.3-windows-x64.exe`
+- `agent-docs-mcp-v1.2.3-macos-x64`
+- `agent-docs-mcp-v1.2.3-macos-arm64`
+
 ## Modules
 
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip

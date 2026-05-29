@@ -1,0 +1,23 @@
+{
+  "resources":{
+  "includes":[{
+    "pattern":"\\QMETA-INF/services/io.github.duckasteroid.agentdocs.mcp.tools.Tool\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/io.modelcontextprotocol.json.McpJsonMapperSupplier\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/io.modelcontextprotocol.json.schema.JsonSchemaValidatorSupplier\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.lang.System$LoggerFinder\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/java.time.zone.ZoneRulesProvider\\E"
+  }, {
+    "pattern":"\\QMETA-INF/services/org.slf4j.spi.SLF4JServiceProvider\\E"
+  }, {
+    "pattern":"\\Qinstructions.txt\\E"
+  }, {
+    "pattern":"\\Qorg/slf4j/impl/StaticLoggerBinder.class\\E"
+  }, {
+    "pattern":"\\Qversion.info\\E"
+  }]},
+  "bundles":[]
+}

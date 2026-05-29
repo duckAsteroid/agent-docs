@@ -1,10 +1,15 @@
 plugins {
     id 'application'
+    id 'org.graalvm.buildtools.native' version '0.10.6'
 }
 
 def generatedVersionResourceDir = layout.buildDirectory.dir("generated/resources/main")
 def generatedVersionResourceFile = generatedVersionResourceDir.map { it.file("version.info") }
 def mcpServerVersion = providers.provider { version.toString() }
+def nativeImageMetadataDir = layout.projectDirectory.dir("src/main/resources/META-INF/native-image")
+def tracingAgentEnabled = providers.gradleProperty("agentDocs.enableTracingAgent")
+        .map { it.toBoolean() }
+        .orElse(false)
 
 tasks.register("generateVersionResource") {
     outputs.file(generatedVersionResourceFile)
@@ -38,6 +43,14 @@ dependencies {
 
 test {
     useJUnitPlatform()
+
+    if (tracingAgentEnabled.get()) {
+        systemProperty(
+                'agentDocs.mcp.integration.server.javaAgentArgs',
+                "-agentlib:native-image-agent=config-merge-dir=${nativeImageMetadataDir.asFile.absolutePath}"
+        )
+        systemProperty('agentDocs.mcp.integration.timeoutSeconds', '60')
+    }
 }
 
 java {
@@ -48,3 +61,15 @@ java {
 application {
     mainClass = 'io.github.duckasteroid.agentdocs.mcp.Application'
 }
+
+graalvmNative {
+    toolchainDetection = true
+    binaries {
+        main {
+            imageName = 'agent-docs-mcp'
+            buildArgs.add('--no-fallback')
+        }
+    }
+}
+
+

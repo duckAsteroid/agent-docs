@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,8 +36,17 @@ public class ApplicationIntegrationTest {
         Files.writeString(repositoryRoot.resolve(Path.of("com.example", "demo", "1.0.0", "setup.md")), "# Setup\n");
         Files.writeString(repositoryRoot.resolve(Path.of("com.example", "demo", "1.0.0", "agents.md")), "# Agent Docs\nHello\n");
 
+        List<String> serverArgs = new ArrayList<>();
+        String tracingAgentArgs = System.getProperty("agentDocs.mcp.integration.server.javaAgentArgs", "").trim();
+        if (!tracingAgentArgs.isEmpty()) {
+            serverArgs.add(tracingAgentArgs);
+        }
+        serverArgs.add("-cp");
+        serverArgs.add(System.getProperty("java.class.path"));
+        serverArgs.add(Application.class.getName());
+
         ServerParameters serverParameters = ServerParameters.builder(javaCommand())
-                .args("-cp", System.getProperty("java.class.path"), Application.class.getName())
+                .args(serverArgs.toArray(String[]::new))
                 .addEnvVar("AGENT_DOCS_LOCAL_REPOSITORY", repositoryRoot.toString())
                 .build();
 
@@ -43,9 +54,11 @@ public class ApplicationIntegrationTest {
                 serverParameters,
                 new JacksonMcpJsonMapper(new ObjectMapper()));
 
+        Duration timeout = Duration.ofSeconds(Long.getLong("agentDocs.mcp.integration.timeoutSeconds", 5L));
+
         this.client = McpClient.sync(transport)
-                .requestTimeout(Duration.ofSeconds(5))
-                .initializationTimeout(Duration.ofSeconds(5))
+                .requestTimeout(timeout)
+                .initializationTimeout(timeout)
                 .build();
         this.initializeResult = client.initialize();
         assertNotNull(initializeResult);
