@@ -1,6 +1,6 @@
 # Agent Docs Toolchain Proposal
 
-> Status note (current implementation): this document captures the original proposal and rationale. For the current runtime contract, prefer `README.md`, `AGENTS.md`, `agent-docs-publish-gradle-plugin/README.md`, and `agent-docs-mcp/README.md`.
+> Status note (current implementation): this document captures the original proposal and rationale. The MCP subproject has been removed from the current repository operating model. For the current runtime contract, prefer `README.md`, `AGENTS.md`, `agent-docs-publish-gradle-plugin/README.md`, and `agent-docs-resolve-gradle-plugin/README.md`.
 
 ## Summary
 
@@ -35,14 +35,14 @@ This creates a gap between what a human library author knows and what an agent c
 
 Publish an additional sidecar artifact called `agent-docs` for each library release. The artifact is version-aligned with the binary dependency and stored in the same package repository.
 
-Three separate components will be developed:
+The original proposal described three components:
 
 1. **Publisher plugin**
    - Generates and publishes `agent-docs` sidecar artifacts from the library project.
 2. **Resolver plugin**
    - Resolves `agent-docs` sidecars for dependencies in consuming projects and stores them in a local Maven-style repository.
 3. **MCP component**
-   - Reads local sidecar content and exposes resolved documentation to coding agents via MCP resources and tools.
+   - Reads local sidecar content and exposes resolved documentation to coding agents via MCP resources and tools (historical; no longer in this repository).
 
 ## Key Architectural Decisions
 
@@ -58,6 +58,8 @@ Reasons:
 - clearer ownership of the artifact spec
 
 ### 2. Resolver and MCP must be decoupled
+
+> Historical note: this decision remains valid design rationale, but the MCP subproject is not part of the current repository.
 
 The resolver and MCP components must not call each other directly.
 
@@ -106,7 +108,6 @@ The publisher plugin should support generated or curated content from the librar
 agent-docs/
   agent-docs-publish-gradle-plugin/
   agent-docs-resolve-gradle-plugin/
-  agent-docs-mcp/
   docs/
 ```
 
@@ -146,17 +147,9 @@ Important constraint:
 
 This plugin is the only part that should need repository credentials or artifact resolution logic.
 
-## `agent-docs-mcp`
+## Historical serving component
 
-Responsibilities:
-
-- read local resolver-managed repository content only
-- answer library/doc lookup questions for agents from local files only
-- expose resource reads via `agentdocs:///{groupId}/{artifactId}/{version}/{path}` and focused MCP tools for retrieval
-
-Important constraint:
-
-This component must not perform dependency resolution or remote repository access.
+This component was proposed as an optional serving layer and has been removed from the current repository.
 
 ## Artifact Contract
 
@@ -180,8 +173,7 @@ agent-docs.zip
 - Publisher packages docs from a configured root (default `src/agentDocs`) into an `agent-docs` zip sidecar.
 - Publisher enforces exactly one `agents.md` entrypoint in docs root (case-insensitive in source, normalized in packaged output).
 - Resolver resolves and caches sidecar zips in a local Maven-style repository.
-- MCP serves markdown from local files using `agentdocs:///{groupId}/{artifactId}/{version}/{path}` and supports `get_agent_docs` for entrypoint retrieval.
-- MCP does not perform remote dependency resolution.
+- Resolver extracts docs by GAV under `.agents/resources/agent-docs` and generates local skills under `.agents/skills`.
 
 ## Gradle Integration Strategy
 
@@ -233,34 +225,29 @@ It also lets organizations publish private library guidance to internal consumer
 1. Define the spec:
    - sidecar archive shape
    - `agents.md` entrypoint expectations
-   - resolver local repository contract used by MCP
+   - resolver local repository and `.agents` output contracts
 2. Build a minimal publisher plugin:
    - package curated markdown into `agent-docs.zip`
    - publish alongside a sample Java library
 3. Build a minimal resolver plugin:
    - resolve sidecars for dependencies
    - cache sidecars in deterministic local repository layout
-4. Build a minimal MCP server:
-   - read local repository only
-   - support `agentdocs://...` resource reads and `get_agent_docs`
-5. Add end-to-end documentation and compatibility tests
+4. Add end-to-end documentation and compatibility tests
 
 ## Suggested New Repo README Opening
 
-This repository contains a toolchain for publishing, resolving, and serving **agent-ready documentation** for binary dependencies. It introduces an `agent-docs` sidecar artifact that travels with the same module/version as a library dependency, is resolved through standard Gradle/Maven repositories, cached locally by a Gradle resolver plugin, and exposed to coding agents through a separate MCP server that reads only from the local cache.
+This repository contains a toolchain for publishing and resolving **agent-ready documentation** for binary dependencies. It introduces an `agent-docs` sidecar artifact that travels with the same module/version as a library dependency, is resolved through standard Gradle/Maven repositories, cached locally by a Gradle resolver plugin, and exposed to coding agents through local `.agents` skills and resources.
 
 ## Notes For A Future Agent
 
 The important decisions already made are:
 
 1. Use a **new repository** for this work.
-2. Create **three separate components**:
+2. Create **two separate components**:
    - publisher Gradle plugin
    - resolver Gradle plugin
-   - MCP server
-3. Keep **resolver and MCP fully decoupled**.
-4. Use the **resolver-managed local repository layout** as their integration boundary.
-5. Prefer a **sidecar artifact** named `agent-docs`, aligned with the same dependency version as the binary artifact.
-6. Prefer **publish-time generation** of agent-ready docs from the library project.
+3. Use the **resolver-managed local repository and `.agents` outputs** as the integration boundary.
+4. Prefer a **sidecar artifact** named `agent-docs`, aligned with the same dependency version as the binary artifact.
+5. Prefer **publish-time generation** of agent-ready docs from the library project.
 
 These decisions should be treated as the current baseline unless explicitly revised.

@@ -1,6 +1,6 @@
 # Agent Docs Publish Plugin
 
-This plugin packages agent-oriented documentation into a sidecar zip archive that can be resolved later and consumed locally by `agent-docs-mcp`.
+This plugin packages agent-oriented documentation into a sidecar zip archive that can be resolved later and consumed locally by resolver-generated skills/resources.
 
 The plugin contract is intentionally minimal:
 
@@ -82,7 +82,7 @@ Recommended project layout:
 
 ## Writing docs that work well for agent consumers
 
-Agents consuming docs through `agent-docs-mcp` generally perform best when content is:
+Agents consuming docs through resolver-generated skills/resources generally perform best when content is:
 
 - **Task-oriented**: include steps for common goals (setup, auth, migration, troubleshooting).
 - **Explicit**: prefer exact commands, concrete paths, and precise config keys.

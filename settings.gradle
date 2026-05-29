@@ -9,6 +9,5 @@ rootProject.name = 'agent-docs'
 
 include(
     'agent-docs-publish-gradle-plugin',
-    'agent-docs-resolve-gradle-plugin',
-    'agent-docs-mcp'
+    'agent-docs-resolve-gradle-plugin'
 )
