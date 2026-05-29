@@ -21,10 +21,10 @@ gradlePlugin {
     website = 'https://github.com/duckasteroid/agent-docs'
     vcsUrl  = 'https://github.com/duckasteroid/agent-docs'
     plugins {
-        agentDocsResolve {
-            id = 'io.github.duckasteroid.agent-docs.resolve'
+        agentDocs {
+            id = 'io.github.duckasteroid.agent-docs'
             implementationClass = 'io.github.duckasteroid.agentdocs.resolve.AgentDocsResolvePlugin'
-            displayName = 'Agent Docs Resolve Plugin'
+            displayName = 'Agent Docs Plugin'
             tags  = ['AI Agent', 'documentation', 'publishing']
             description = 'Resolves dependency sidecars, caches them locally, and generates agent skills in single-index, per-dependency, or threshold-based auto mode for GAV-organized docs resources'
         }

@@ -204,7 +204,7 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
 
         int threshold = getPerDependencySkillThreshold().get();
         if (threshold < 0) {
-            throw new IllegalArgumentException("agentDocsResolve.perDependencySkillThreshold must be >= 0");
+            throw new IllegalArgumentException("agentDocs.perDependencySkillThreshold must be >= 0");
         }
 
         return resolvedEntryCount <= threshold ? SkillGenerationMode.PER_DEPENDENCY : SkillGenerationMode.SINGLE_INDEX;

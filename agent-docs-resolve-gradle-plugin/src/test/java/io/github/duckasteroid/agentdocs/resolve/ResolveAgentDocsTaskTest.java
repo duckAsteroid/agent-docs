@@ -164,7 +164,7 @@ class ResolveAgentDocsTaskTest {
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {
                     id 'java-library'
-                    id 'io.github.duckasteroid.agent-docs.resolve'
+                    id 'io.github.duckasteroid.agent-docs'
                 }
 
                 repositories {
@@ -179,7 +179,7 @@ class ResolveAgentDocsTaskTest {
                     api 'com.example:dep-api:2.0.0'
                 }
 
-                agentDocsResolve {
+                agentDocs {
                     skillGenerationMode = '%s'
                 %s
                 }

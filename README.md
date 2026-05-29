@@ -34,7 +34,7 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 
 ## Resolver mode guide
 
-Use this quick table when configuring `agentDocsResolve.skillGenerationMode`:
+Use this quick table when configuring `agentDocs.skillGenerationMode`:
 
 | Mode | When to use | Output |
 | --- | --- | --- |

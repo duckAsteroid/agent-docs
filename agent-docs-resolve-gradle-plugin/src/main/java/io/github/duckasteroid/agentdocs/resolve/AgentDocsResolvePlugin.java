@@ -5,7 +5,7 @@ import org.gradle.api.Project;
 import org.gradle.api.provider.Provider;
 
 /**
- * Registers the {@code agentDocsResolve} extension and {@code resolveAgentDocs} task.
+ * Registers the {@code agentDocs} extension and {@code resolveAgentDocs} task.
  *
  * <p>The task resolves sidecar artifacts, caches them in a local Maven-style repository,
  * extracts docs for local use, and generates skills according to configured mode.
@@ -17,7 +17,7 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
         AgentDocsResolveExtension extension =
-                project.getExtensions().create("agentDocsResolve", AgentDocsResolveExtension.class);
+                project.getExtensions().create("agentDocs", AgentDocsResolveExtension.class);
 
         extension.getConfigurationName().convention("runtimeClasspath");
         extension.getSkillGenerationMode().convention(SkillGenerationMode.SINGLE_INDEX.name());

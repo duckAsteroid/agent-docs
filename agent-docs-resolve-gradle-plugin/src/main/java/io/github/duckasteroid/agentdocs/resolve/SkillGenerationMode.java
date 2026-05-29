@@ -25,7 +25,7 @@ public enum SkillGenerationMode {
             case "PER_DEPENDENCY", "PERDEPENDENCY" -> PER_DEPENDENCY;
             case "AUTO", "AUTO_THRESHOLD", "THRESHOLD" -> AUTO_THRESHOLD;
             default -> throw new IllegalArgumentException(
-                    "Unsupported agentDocsResolve.skillGenerationMode: " + value
+                    "Unsupported agentDocs.skillGenerationMode: " + value
                             + ". Supported values: SINGLE_INDEX, PER_DEPENDENCY, AUTO_THRESHOLD");
         };
     }

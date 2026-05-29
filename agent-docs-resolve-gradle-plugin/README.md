@@ -18,7 +18,7 @@ This plugin resolves `agent-docs` sidecar artifacts for direct dependencies, cac
 ## Extension Configuration
 
 ```groovy
-agentDocsResolve {
+agentDocs {
   configurationName = 'runtimeClasspath'
 
   // SINGLE_INDEX | PER_DEPENDENCY | AUTO_THRESHOLD
