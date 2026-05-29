@@ -1,0 +1,2 @@
+Need to do matrix build for different OS/architectures for native release artifacts. For example, using GitHub Actions matrix strategy to build and upload binaries for Linux x64, Windows x64, macOS x64, and macOS arm64.
+Output binaries onto GH packages
