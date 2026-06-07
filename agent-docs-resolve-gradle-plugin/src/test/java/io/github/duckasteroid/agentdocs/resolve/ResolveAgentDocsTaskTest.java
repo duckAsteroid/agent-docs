@@ -1,7 +1,6 @@
 package io.github.duckasteroid.agentdocs.resolve;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,21 +16,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ResolveAgentDocsTaskTest {
+    private static final String DEFAULT_DEPENDENCIES = """
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                    implementation 'com.example:dep-no-sidecar:3.0.0'
+                    api 'com.example:dep-api:2.0.0'
+                }
+                """;
 
     @TempDir
     Path projectDir;
 
     @Test
-    void resolveAgentDocsCachesSidecarsForDirectImplementationAndApiDependencies() throws IOException {
+    void resolveAgentDocsDownloadsExtractsAndGeneratesPerDependencySkills() throws IOException {
         Path upstreamRepo = projectDir.resolve("upstream-repo");
-        Path localSidecarRepo = projectDir.resolve("agent-docs-repo");
 
         writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
         writeMavenModule(upstreamRepo, "com.example", "dep-api", "2.0.0", true);
         writeMavenModule(upstreamRepo, "com.example", "dep-no-sidecar", "3.0.0", false);
 
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
-        writeConsumerBuildFile("SINGLE_INDEX", null);
+        writeConsumerBuildFile(DEFAULT_DEPENDENCIES);
         writeFile(projectDir.resolve("src/main/java/example/App.java"), """
                 package example;
                 public class App {
@@ -41,44 +46,47 @@ class ResolveAgentDocsTaskTest {
                 }
                 """);
 
-        BuildResult result = runResolve(localSidecarRepo);
+        BuildResult result = runResolve();
 
         assertNotNull(result.task(":resolveAgentDocs"));
         assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
 
-        Path implSidecar = localSidecarRepo.resolve("com/example/dep-impl/1.0.0/dep-impl-1.0.0-agent-docs.zip");
-        Path apiSidecar = localSidecarRepo.resolve("com/example/dep-api/2.0.0/dep-api-2.0.0-agent-docs.zip");
-        Path missingSidecar = localSidecarRepo.resolve("com/example/dep-no-sidecar/3.0.0/dep-no-sidecar-3.0.0-agent-docs.zip");
+        Path implRoot = projectDir.resolve(".agent/skills/com-example-dep-impl-1-0-0");
+        Path apiRoot = projectDir.resolve(".agent/skills/com-example-dep-api-2-0-0");
+        Path missingRoot = projectDir.resolve(".agent/skills/com-example-dep-no-sidecar-3-0-0");
 
-        assertTrue(Files.exists(implSidecar), "Expected implementation dependency sidecar to be cached");
-        assertTrue(Files.exists(apiSidecar), "Expected api dependency sidecar to be cached");
-        assertTrue(Files.notExists(missingSidecar), "Expected missing sidecar dependency to be skipped");
+        assertTrue(Files.exists(implRoot.resolve("agent-docs.zip")));
+        assertTrue(Files.exists(apiRoot.resolve("agent-docs.zip")));
+        assertTrue(Files.notExists(missingRoot.resolve("agent-docs.zip")));
 
-        Path implEntrypoint = projectDir.resolve(".agents/resources/agent-docs/com/example/dep-impl/1.0.0/agents.md");
-        Path apiEntrypoint = projectDir.resolve(".agents/resources/agent-docs/com/example/dep-api/2.0.0/agents.md");
-        Path missingEntrypoint = projectDir.resolve(".agents/resources/agent-docs/com/example/dep-no-sidecar/3.0.0/agents.md");
+        Path implEntrypoint = implRoot.resolve("SKILL.md");
+        Path apiEntrypoint = apiRoot.resolve("SKILL.md");
+        assertTrue(Files.exists(implEntrypoint));
+        assertTrue(Files.exists(apiEntrypoint));
+        assertTrue(Files.exists(implRoot.resolve(".agent-docs")));
+        assertTrue(Files.exists(apiRoot.resolve(".agent-docs")));
+        assertTrue(Files.readString(implEntrypoint).contains("name: com-example-dep-impl-1-0-0"));
+        assertTrue(Files.readString(apiEntrypoint).contains("name: com-example-dep-api-2-0-0"));
 
-        assertTrue(Files.exists(implEntrypoint), "Expected implementation dependency docs to be extracted");
-        assertTrue(Files.exists(apiEntrypoint), "Expected api dependency docs to be extracted");
-        assertTrue(Files.notExists(missingEntrypoint), "Expected missing sidecar docs to be skipped");
-
-        Path skillFile = projectDir.resolve(".agents/skills/agent-docs.md");
-        assertTrue(Files.exists(skillFile), "Expected generated agent-docs skill to be written");
-        String skill = Files.readString(skillFile);
-        assertTrue(skill.contains("com.example:dep-impl:1.0.0"));
-        assertTrue(skill.contains("com.example:dep-api:2.0.0"));
-        assertTrue(skill.contains("../resources/agent-docs/com/example/dep-impl/1.0.0/agents.md"));
-        assertTrue(skill.contains("../resources/agent-docs/com/example/dep-api/2.0.0/agents.md"));
-        assertFalse(skill.contains("com.example:dep-no-sidecar:3.0.0"));
+        Path implGeneratedSkill =
+                projectDir.resolve(".agent/skills/agent-docs-dependencies/com-example-dep-impl-1-0-0/SKILL.md");
+        Path apiGeneratedSkill =
+                projectDir.resolve(".agent/skills/agent-docs-dependencies/com-example-dep-api-2-0-0/SKILL.md");
+        assertTrue(Files.exists(implGeneratedSkill));
+        assertTrue(Files.exists(apiGeneratedSkill));
+        assertTrue(Files.exists(implGeneratedSkill.getParent().resolve(".agent-docs")));
+        assertTrue(Files.exists(apiGeneratedSkill.getParent().resolve(".agent-docs")));
+        assertTrue(Files.readString(implGeneratedSkill).contains("name: com-example-dep-impl-1-0-0"));
+        assertTrue(Files.readString(apiGeneratedSkill).contains("name: com-example-dep-api-2-0-0"));
     }
 
     @Test
-    void resolveAgentDocsCleansUpWhenSwitchingSkillGenerationModes() throws IOException {
+    void resolveAgentDocsRemovesOnlyStaleManagedSkillFolders() throws IOException {
         Path upstreamRepo = projectDir.resolve("upstream-repo");
-        Path localSidecarRepo = projectDir.resolve("agent-docs-repo");
 
         writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
         writeMavenModule(upstreamRepo, "com.example", "dep-api", "2.0.0", true);
+        writeMavenModule(upstreamRepo, "com.example", "dep-no-sidecar", "3.0.0", false);
 
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
         writeFile(projectDir.resolve("src/main/java/example/App.java"), """
@@ -90,77 +98,44 @@ class ResolveAgentDocsTaskTest {
                 }
                 """);
 
-        writeConsumerBuildFile("SINGLE_INDEX", null);
-        runResolve(localSidecarRepo);
-
-        Path singleSkillFile = projectDir.resolve(".agents/skills/agent-docs.md");
-        Path perDependencySkillRoot = projectDir.resolve(".agents/skills/agent-docs-dependencies");
-        assertTrue(Files.exists(singleSkillFile), "Expected single index skill to exist in SINGLE_INDEX mode");
-        assertTrue(Files.notExists(perDependencySkillRoot), "Expected per-dependency skill root to be absent in SINGLE_INDEX mode");
-
-        writeConsumerBuildFile("PER_DEPENDENCY", null);
-        runResolve(localSidecarRepo);
-
-        Path implPerDependencySkill = projectDir.resolve(".agents/skills/agent-docs-dependencies/com/example/dep-impl/1.0.0.md");
-        Path apiPerDependencySkill = projectDir.resolve(".agents/skills/agent-docs-dependencies/com/example/dep-api/2.0.0.md");
-        assertTrue(Files.notExists(singleSkillFile), "Expected single index skill to be removed in PER_DEPENDENCY mode");
-        assertTrue(Files.exists(implPerDependencySkill), "Expected implementation per-dependency skill to be generated");
-        assertTrue(Files.exists(apiPerDependencySkill), "Expected api per-dependency skill to be generated");
-
-        writeConsumerBuildFile("SINGLE_INDEX", null);
-        runResolve(localSidecarRepo);
-
-        assertTrue(Files.exists(singleSkillFile), "Expected single index skill to be restored in SINGLE_INDEX mode");
-        assertTrue(Files.notExists(perDependencySkillRoot), "Expected per-dependency skills to be cleaned up after switching back");
-    }
-
-    @Test
-    void resolveAgentDocsUsesThresholdToPickSkillGenerationModel() throws IOException {
-        Path upstreamRepo = projectDir.resolve("upstream-repo");
-        Path localSidecarRepo = projectDir.resolve("agent-docs-repo");
-
-        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
-        writeMavenModule(upstreamRepo, "com.example", "dep-api", "2.0.0", true);
-
-        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
-        writeFile(projectDir.resolve("src/main/java/example/App.java"), """
-                package example;
-                public class App {
-                    public static String value() {
-                        return "ok";
-                    }
+        writeConsumerBuildFile("""
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                    implementation 'com.example:dep-api:2.0.0'
                 }
                 """);
+        runResolve();
 
-        Path singleSkillFile = projectDir.resolve(".agents/skills/agent-docs.md");
-        Path perDependencySkillRoot = projectDir.resolve(".agents/skills/agent-docs-dependencies");
-        Path implPerDependencySkill = projectDir.resolve(".agents/skills/agent-docs-dependencies/com/example/dep-impl/1.0.0.md");
+        Path implSkillDir = projectDir.resolve(".agent/skills/com-example-dep-impl-1-0-0");
+        Path apiSkillDir = projectDir.resolve(".agent/skills/com-example-dep-api-2-0-0");
+        assertTrue(Files.exists(implSkillDir.resolve(".agent-docs")));
+        assertTrue(Files.exists(apiSkillDir.resolve(".agent-docs")));
 
-        writeConsumerBuildFile("AUTO_THRESHOLD", 1);
-        runResolve(localSidecarRepo);
+        Path manualSkillDir = projectDir.resolve(".agent/skills/custom-manual-skill");
+        writeFile(manualSkillDir.resolve("SKILL.md"), "# custom\n");
 
-        assertTrue(Files.exists(singleSkillFile), "Expected single index skill when resolved docs exceed threshold");
-        assertTrue(Files.notExists(perDependencySkillRoot), "Expected per-dependency skills to be absent above threshold");
+        writeConsumerBuildFile("""
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                    implementation 'com.example:dep-no-sidecar:3.0.0'
+                }
+                """);
+        runResolve();
 
-        writeConsumerBuildFile("AUTO_THRESHOLD", 2);
-        runResolve(localSidecarRepo);
-
-        assertTrue(Files.notExists(singleSkillFile), "Expected single index skill to be removed at-or-below threshold");
-        assertTrue(Files.exists(implPerDependencySkill), "Expected per-dependency skills when resolved docs are at threshold");
+        assertTrue(Files.exists(implSkillDir));
+        assertTrue(Files.notExists(apiSkillDir));
+        assertTrue(Files.exists(manualSkillDir));
     }
 
-    private BuildResult runResolve(Path localSidecarRepo) {
+    private BuildResult runResolve() {
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
                 .withPluginClasspath()
-                .withArguments("resolveAgentDocs", "-DagentDocs.localRepository=" + localSidecarRepo)
+                .withArguments("resolveAgentDocs")
                 .build();
     }
 
-    private void writeConsumerBuildFile(String skillGenerationMode, Integer perDependencySkillThreshold) throws IOException {
-        String thresholdLine = perDependencySkillThreshold == null
-                ? ""
-                : "    perDependencySkillThreshold = " + perDependencySkillThreshold + "\n";
+    private void writeConsumerBuildFile(String dependenciesBlock) throws IOException {
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {
                     id 'java-library'
@@ -173,17 +148,8 @@ class ResolveAgentDocsTaskTest {
                     }
                 }
 
-                dependencies {
-                    implementation 'com.example:dep-impl:1.0.0'
-                    implementation 'com.example:dep-no-sidecar:3.0.0'
-                    api 'com.example:dep-api:2.0.0'
-                }
-
-                agentDocs {
-                    skillGenerationMode = '%s'
                 %s
-                }
-                """.formatted(skillGenerationMode, thresholdLine));
+                """.formatted(dependenciesBlock));
     }
 
     private static void writeMavenModule(Path repositoryRoot, String group, String artifact, String version, boolean withSidecar)
@@ -211,7 +177,7 @@ class ResolveAgentDocsTaskTest {
     private static void writeAgentDocsSidecar(Path zipPath, String group, String artifact, String version) throws IOException {
         Files.createDirectories(zipPath.getParent());
         try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(zipPath))) {
-            outputStream.putNextEntry(new ZipEntry("agents.md"));
+            outputStream.putNextEntry(new ZipEntry("SKILL.md"));
             outputStream.write(("# " + group + ":" + artifact + ":" + version + "\n").getBytes());
             outputStream.closeEntry();
         }
@@ -222,4 +188,3 @@ class ResolveAgentDocsTaskTest {
         Files.writeString(filePath, content);
     }
 }
-

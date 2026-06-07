@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.gradle.testkit.runner.BuildResult;
@@ -29,8 +30,8 @@ class AgentDocsPublishPluginTest {
                     id 'io.github.duckasteroid.agent-docs.publish'
                 }
                 """);
-        writeFile(projectDir.resolve("src/agentDocs/AgEnTs.Md"), "# Agent Docs\n");
-        writeFile(projectDir.resolve("src/agentDocs/topics/overview.md"), "# Overview\n");
+        writeFile(projectDir.resolve("src/agent-docs/sKiLl.Md"), skillFrontmatter("agent-docs", "Build and publish agent docs sidecars."));
+        writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
         BuildResult result = GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
@@ -45,11 +46,15 @@ class AgentDocsPublishPluginTest {
         assertTrue(Files.exists(archivePath), "Expected archive to be created");
 
         try (ZipFile zipFile = new ZipFile(archivePath.toFile())) {
-            ZipEntry agentsFile = zipFile.getEntry("agents.md");
+            ZipEntry skillFile = zipFile.getEntry("SKILL.md");
             ZipEntry overviewFile = zipFile.getEntry("topics/overview.md");
-            assertNotNull(agentsFile, "Expected lowercase agents.md entrypoint in archive");
+            assertNotNull(skillFile, "Expected SKILL.md entrypoint in archive");
             assertNotNull(overviewFile, "Expected overview file in archive");
+            String skillContent = readZipEntry(zipFile, skillFile);
+            assertTrue(skillContent.contains("description:"), "Expected description frontmatter to remain");
+            assertTrue(!skillContent.contains("\nname:"), "Expected frontmatter name to be omitted from sidecar SKILL.md");
         }
+        assertTrue(result.getOutput().contains("frontmatter 'name' is ignored"));
     }
 
     @Test
@@ -68,11 +73,11 @@ class AgentDocsPublishPluginTest {
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
-        assertTrue(result.getOutput().contains("Agent docs directory does not exist:"));
+        assertTrue(result.getOutput().contains(":validateAgentDocs"));
     }
 
     @Test
-    void packageAgentDocsFailsWhenAgentsEntrypointIsMissing() throws IOException {
+    void packageAgentDocsFailsWhenSkillEntrypointIsMissing() throws IOException {
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {
@@ -80,7 +85,7 @@ class AgentDocsPublishPluginTest {
                     id 'io.github.duckasteroid.agent-docs.publish'
                 }
                 """);
-        writeFile(projectDir.resolve("src/agentDocs/topics/overview.md"), "# Overview\n");
+        writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
         BuildResult result = GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
@@ -88,11 +93,11 @@ class AgentDocsPublishPluginTest {
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
-        assertTrue(result.getOutput().contains("must contain AGENTS.md (or agents.md)"));
+        assertTrue(result.getOutput().contains("must contain SKILL.md (case-insensitive)"));
     }
 
     @Test
-    void packageAgentDocsFailsWhenMultipleAgentsEntrypointsExistWithDifferentCase() throws IOException {
+    void packageAgentDocsFailsWhenMultipleSkillEntrypointsExistWithDifferentCase() throws IOException {
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {
@@ -100,8 +105,8 @@ class AgentDocsPublishPluginTest {
                     id 'io.github.duckasteroid.agent-docs.publish'
                 }
                 """);
-        writeFile(projectDir.resolve("src/agentDocs/AGENTS.md"), "# Agent Docs\n");
-        writeFile(projectDir.resolve("src/agentDocs/agents.md"), "# Agent Docs Duplicate\n");
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Primary skill."));
+        writeFile(projectDir.resolve("src/agent-docs/skill.md"), skillFrontmatter("agent-docs", "Duplicate skill."));
 
         BuildResult result = GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
@@ -109,7 +114,7 @@ class AgentDocsPublishPluginTest {
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
-        assertTrue(result.getOutput().contains("must contain exactly one AGENTS.md file"));
+        assertTrue(result.getOutput().contains("must contain exactly one SKILL.md file"));
     }
 
     @Test
@@ -125,7 +130,7 @@ class AgentDocsPublishPluginTest {
                     docsDirectory = layout.projectDirectory.dir('docs/agent-docs')
                 }
                 """);
-        writeFile(projectDir.resolve("docs/agent-docs/agents.md"), "# Agent Docs\n");
+        writeFile(projectDir.resolve("docs/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs with a custom docs directory."));
         writeFile(projectDir.resolve("docs/agent-docs/custom/custom.md"), "custom\n");
 
         BuildResult result = GradleRunner.create()
@@ -141,9 +146,9 @@ class AgentDocsPublishPluginTest {
         assertTrue(Files.exists(archivePath), "Expected archive to be created");
 
         try (ZipFile zipFile = new ZipFile(archivePath.toFile())) {
-            ZipEntry agentsFile = zipFile.getEntry("agents.md");
+            ZipEntry skillFile = zipFile.getEntry("SKILL.md");
             ZipEntry customFile = zipFile.getEntry("custom/custom.md");
-            assertNotNull(agentsFile, "Expected agents.md entrypoint in archive");
+            assertNotNull(skillFile, "Expected SKILL.md entrypoint in archive");
             assertNotNull(customFile, "Expected custom docs file in archive");
         }
     }
@@ -179,8 +184,8 @@ class AgentDocsPublishPluginTest {
                     }
                 }
                 """);
-        writeFile(projectDir.resolve("src/agentDocs/AGENTS.md"), "# Agent Docs\n");
-        writeFile(projectDir.resolve("src/agentDocs/topics/overview.md"), "# Overview\n");
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs alongside a Maven publication."));
+        writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
         BuildResult result = GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
@@ -197,9 +202,100 @@ class AgentDocsPublishPluginTest {
                 "Expected agent-docs classified zip in Maven local repo");
     }
 
+    @Test
+    void packageAgentDocsFailsWhenSkillFrontmatterIsMissing() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), "# Missing frontmatter\n");
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("packageAgentDocs")
+                .buildAndFail();
+
+        assertTrue(result.getOutput().contains("must start with YAML frontmatter"));
+    }
+
+    @Test
+    void packageAgentDocsAllowsAnyPublisherNameAndOmitsItFromSidecar() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("wrong-skill", "Name mismatch should fail validation."));
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("packageAgentDocs")
+                .build();
+
+        assertNotNull(result.task(":packageAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":packageAgentDocs").getOutcome());
+        assertTrue(result.getOutput().contains("frontmatter 'name' is ignored"));
+
+        Path archivePath = projectDir.resolve("build/agent-docs/sample-lib-agent-docs.zip");
+        try (ZipFile zipFile = new ZipFile(archivePath.toFile())) {
+            ZipEntry skillFile = zipFile.getEntry("SKILL.md");
+            assertNotNull(skillFile, "Expected SKILL.md entrypoint in archive");
+            String skillContent = readZipEntry(zipFile, skillFile);
+            assertTrue(!skillContent.contains("\nname:"), "Expected frontmatter name to be omitted from sidecar SKILL.md");
+            assertTrue(skillContent.contains("description:"), "Expected description frontmatter to remain");
+        }
+    }
+
+    @Test
+    void packageAgentDocsFailsWhenStandardDirectoryIsAFile() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Validate standard folders."));
+        writeFile(projectDir.resolve("src/agent-docs/references"), "not-a-directory\n");
+
+        BuildResult result = GradleRunner.create()
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("packageAgentDocs")
+                .buildAndFail();
+
+        assertTrue(result.getOutput().contains("standard directory 'references' must be a directory"));
+    }
+
     private static void writeFile(Path filePath, String content) throws IOException {
         Files.createDirectories(filePath.getParent());
         Files.writeString(filePath, content);
     }
-}
 
+    private static String skillFrontmatter(String name, String description) {
+        return """
+                ---
+                name: %s
+                description: %s
+                ---
+
+                # %s
+
+                ## Usage
+                - Follow the documented workflow.
+                """.formatted(name, description, name);
+    }
+
+    private static String readZipEntry(ZipFile zipFile, ZipEntry entry) throws IOException {
+        try (var inputStream = zipFile.getInputStream(entry)) {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+}
