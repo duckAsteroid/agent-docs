@@ -71,25 +71,11 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 ## Modules
 
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
-- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, stores each sidecar under `.agent/skills/<gav-skill-name>/agent-docs.zip`, extracts docs under `.agent/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, removes stale marker-owned dependency skill folders, and generates skills in one of three modes:
-  - `SINGLE_INDEX` -> `.agent/skills/SKILL.md`
-  - `PER_DEPENDENCY` -> `.agent/skills/agent-docs-dependencies/<gav-skill-name>/SKILL.md`
-  - `AUTO_THRESHOLD` -> per-dependency when resolved sidecars are `<= N`, otherwise single-index
-
-## Resolver mode guide
-
-Use this quick table when configuring `agentDocs.skillGenerationMode`:
-
-| Mode | When to use | Output |
-| --- | --- | --- |
-| `SINGLE_INDEX` | Large dependency sets where one stable entry skill is preferred | `.agent/skills/SKILL.md` |
-| `PER_DEPENDENCY` | Smaller dependency sets where dependency-scoped skills are preferred | `.agent/skills/agent-docs-dependencies/<gav-skill-name>/SKILL.md` |
-| `AUTO_THRESHOLD` | Mixed projects where mode should adapt to resolved sidecar count | Per-dependency when `count <= perDependencySkillThreshold`, otherwise single-index |
+- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, stores each sidecar under `.agent/skills/<gav-skill-name>/agent-docs.zip`, extracts docs under `.agent/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, removes stale marker-owned dependency skill folders, and generates one dependency skill per resolved sidecar at `.agent/skills/agent-docs-dependencies/<gav-skill-name>/SKILL.md`.
 
 Notes:
 
-- `AUTO_THRESHOLD` still applies cleanup for the non-selected model each run.
-- Threshold comparison is inclusive for per-dependency mode (`<= N`).
+- Legacy `.agent/skills/SKILL.md` single-index output is cleaned up by the resolver.
 - Dependency folder names use a resolver rewrite strategy that enforces Agent Skills name constraints (`[a-z0-9-]`, no edge/consecutive hyphens, max 64 chars) and appends a hash suffix when truncation is needed.
 
 ## License

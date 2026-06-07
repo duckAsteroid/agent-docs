@@ -1,19 +1,35 @@
-package io.github.duckasteroid.agentdocs.resolve;
+package io.github.duckasteroid.agentdocs.resolve.task.model;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
 
-record ModuleCoordinate(String group, String artifact, String version) {
+/**
+ * Represents a Maven GAV coordinate for a library/dependency.
+ */
+public record ModuleCoordinate(String group, String artifact, String version) {
     private static final int MAX_SKILL_NAME_LENGTH = 64;
     private static final int HASH_SUFFIX_LENGTH = 10;
     private static final String FALLBACK_SKILL_NAME = "dep";
 
+    /**
+     * Returns canonical Maven GAV text form.
+     *
+     * @return {@code group:artifact:version}
+     */
     public String gav() {
         return group + ":" + artifact + ":" + version;
     }
 
+    /**
+     * Generates a skill-folder-compatible identifier derived from GAV.
+     *
+     * <p>The generated name is deterministic, lower-case, and constrained to skill naming
+     * requirements. Names longer than the maximum length are truncated with a hash suffix.
+     *
+     * @return normalized skill folder name
+     */
     public String skillName() {
         String readable = group + "-" + artifact + "-" + version;
         String normalized = normalizeSkillName(readable);
@@ -39,7 +55,7 @@ record ModuleCoordinate(String group, String artifact, String version) {
         return normalized.isEmpty() ? FALLBACK_SKILL_NAME : normalized;
     }
 
-    private String sha256Hex(String value) {
+    private static String sha256Hex(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));

@@ -26,7 +26,7 @@ gradlePlugin {
             implementationClass = 'io.github.duckasteroid.agentdocs.resolve.AgentDocsResolvePlugin'
             displayName = 'Agent Docs Plugin'
             tags  = ['AI Agent', 'documentation', 'publishing']
-            description = 'Resolves dependency sidecars into project-local skill folders and generates agent skills in single-index, per-dependency, or threshold-based auto mode'
+            description = 'Resolves dependency sidecars into project-local skill folders and generates per-dependency agent skills'
         }
     }
 }
