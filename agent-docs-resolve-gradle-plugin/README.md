@@ -1,19 +1,23 @@
 # Agent Docs Resolve Plugin
 
-This plugin resolves `agent-docs` sidecar artifacts for direct dependencies, caches the sidecar zips locally, extracts docs by GAV for local agent consumption, and generates skill files under `.agents/`.
+This plugin resolves `agent-docs` sidecar artifacts for direct dependencies, stores each sidecar under a dependency-scoped project skill folder, extracts a skill-spec layout for local agent consumption, and generates router/index skills under `.agent/skills/`.
 
 ## What It Does
 
 - Adds a `resolveAgentDocs` task.
 - Resolves direct dependencies from the configured classpath (default: `runtimeClasspath`).
 - Attempts to resolve sidecars as `<group>:<artifact>:<version>:agent-docs@zip`.
-- Caches resolved sidecar zips in a local Maven-style repository.
-- Extracts sidecar contents to `.agents/resources/agent-docs/<group>/<artifact>/<version>/`.
+- Copies each resolved sidecar zip to `.agent/skills/<gav-skill-name>/agent-docs.zip`.
+- Extracts sidecar contents directly to `.agent/skills/<gav-skill-name>/` (for example `SKILL.md`, `references/`, `assets/`, `scripts/`).
+- Rewrites dependency skill folder names to Agent-Skills-compatible identifiers (`<gav-skill-name>`), preserving readability and adding hash suffixes when needed for uniqueness under 64 chars.
+- Overwrites each extracted dependency `SKILL.md` frontmatter `name` to match the rewritten folder name.
+- Writes an ownership marker file at `.agent/skills/<gav-skill-name>/.agent-docs`.
 - Generates skills in one of three configurable modes:
   - `SINGLE_INDEX`
   - `PER_DEPENDENCY`
   - `AUTO_THRESHOLD`
 - Cleans remnants from the non-selected generation model when mode changes.
+- Removes stale, marker-owned dependency skill folders when those dependencies are no longer in the project.
 
 ## Extension Configuration
 
@@ -27,22 +31,23 @@ agentDocs {
   // Used only when skillGenerationMode = AUTO_THRESHOLD
   perDependencySkillThreshold = 10
 
-  skillsDirectory = layout.projectDirectory.dir('.agents/skills')
-  skillFile = layout.projectDirectory.file('.agents/skills/agent-docs.md')
-  resourcesDirectory = layout.projectDirectory.dir('.agents/resources/agent-docs')
+  skillsDirectory = layout.projectDirectory.dir('.agent/skills')
+  skillFile = layout.projectDirectory.file('.agent/skills/SKILL.md')
 }
 ```
 
 ## Skill Generation Modes
 
 - `SINGLE_INDEX`
-  - Writes one router skill at `.agents/skills/agent-docs.md`.
-  - Lists resolved GAVs with links to each dependency `agents.md` entrypoint.
-  - Removes `.agents/skills/agent-docs-dependencies/` if present.
+  - Writes one router skill at `.agent/skills/SKILL.md`.
+  - Lists resolved GAVs with links to each dependency `SKILL.md` entrypoint.
+  - Removes `.agent/skills/agent-docs-dependencies/` if present.
 
 - `PER_DEPENDENCY`
-  - Writes one skill per resolved dependency under `.agents/skills/agent-docs-dependencies/<group>/<artifact>/<version>.md`.
-  - Removes `.agents/skills/agent-docs.md` if present.
+  - Writes one generated dependency index skill per resolved dependency under `.agent/skills/agent-docs-dependencies/<gav-skill-name>/SKILL.md`.
+  - Writes frontmatter `name` matching each generated skill folder name.
+  - Marks each generated folder with `.agent-docs`.
+  - Removes `.agent/skills/SKILL.md` if present.
 
 - `AUTO_THRESHOLD`
   - If resolved sidecars count is `<= perDependencySkillThreshold`, behaves as `PER_DEPENDENCY`.
@@ -53,27 +58,12 @@ agentDocs {
 
 | Mode | When to use | Output |
 | --- | --- | --- |
-| `SINGLE_INDEX` | Large dependency sets where one stable entry skill is preferred | `.agents/skills/agent-docs.md` |
-| `PER_DEPENDENCY` | Smaller dependency sets where dependency-scoped skills are preferred | `.agents/skills/agent-docs-dependencies/...` |
+| `SINGLE_INDEX` | Large dependency sets where one stable entry skill is preferred | `.agent/skills/SKILL.md` |
+| `PER_DEPENDENCY` | Smaller dependency sets where dependency-scoped skills are preferred | `.agent/skills/agent-docs-dependencies/...` |
 | `AUTO_THRESHOLD` | Mixed projects where mode should adapt to resolved sidecar count | Per-dependency when `count <= perDependencySkillThreshold`, otherwise single-index |
-
-## Local Repository Path Resolution
-
-The cache path is resolved in this order:
-
-1. JVM property: `-DagentDocs.localRepository=...`
-2. Environment variable: `AGENT_DOCS_LOCAL_REPOSITORY`
-3. Default: `~/.agent-docs/repository`
 
 ## Run
 
 ```bash
 ./gradlew resolveAgentDocs
 ```
-
-With local repository override:
-
-```bash
-./gradlew resolveAgentDocs -DagentDocs.localRepository=/path/to/.agent-docs/repository
-```
-

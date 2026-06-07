@@ -1,6 +1,6 @@
-# agent-docs
+# agent-docs router skill
 
-Use this skill to route to dependency-specific agent docs by GAV (`group:artifact:version`).
+Use this skill to route to dependency-specific SKILL.md files by GAV (`group:artifact:version`).
 
 ## Lookup
 
@@ -11,4 +11,3 @@ Use this skill to route to dependency-specific agent docs by GAV (`group:artifac
 ## Available dependency docs
 
 {{available_dependency_docs}}
-

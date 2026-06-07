@@ -13,6 +13,10 @@ public enum SkillGenerationMode {
 
     /**
      * Parses configured mode values and common aliases.
+     *
+     * @param value configured mode value from extension/property input
+     * @return parsed generation mode, defaulting to {@link #SINGLE_INDEX} for blank input
+     * @throws IllegalArgumentException when value does not map to a supported mode
      */
     static SkillGenerationMode from(String value) {
         if (value == null || value.isBlank()) {
@@ -30,4 +34,3 @@ public enum SkillGenerationMode {
         };
     }
 }
-

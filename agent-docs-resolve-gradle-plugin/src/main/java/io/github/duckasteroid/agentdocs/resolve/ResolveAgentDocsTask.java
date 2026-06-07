@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -27,8 +28,10 @@ import org.gradle.api.tasks.TaskAction;
 
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
- * caches each resolved sidecar in a local Maven-style repository, extracts docs into a GAV-based
- * resources layout, and generates local skills for agent consumption.
+ * stores each sidecar under flat GAV skill directories in the local project skills tree,
+ * extracts docs into dependency-scoped directories, marks managed folders with
+ * {@code .agent-docs}, removes stale marker-owned dependency folders, and generates local
+ * skills for agent consumption.
  *
  * <p>Skill output mode is configurable:
  *
@@ -45,29 +48,52 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     private static final String DEPENDENCY_SKILL_TEMPLATE_RESOURCE = "agent-docs-dependency-skill-template.md";
     private static final String DOC_ENTRIES_PLACEHOLDER = "{{available_dependency_docs}}";
     private static final String GAV_PLACEHOLDER = "{{gav}}";
+    private static final String SKILL_NAME_PLACEHOLDER = "{{skill_name}}";
     private static final String ENTRYPOINT_PLACEHOLDER = "{{entrypoint}}";
     private static final String PER_DEPENDENCY_SKILLS_SUBDIRECTORY = "agent-docs-dependencies";
+    private static final String SIDECAR_FILENAME = "agent-docs.zip";
+    private static final String SKILL_ENTRYPOINT_FILENAME = "SKILL.md";
+    private static final String OWNERSHIP_MARKER_FILENAME = ".agent-docs";
 
+    /**
+     * Gradle configuration name to inspect for direct dependencies.
+     *
+     * @return configuration name property
+     */
     @Input
     public abstract Property<String> getConfigurationName();
 
+    /**
+     * Skill generation mode value.
+     *
+     * @return generation mode property
+     */
     @Input
     public abstract Property<String> getSkillGenerationMode();
 
+    /**
+     * Threshold used when generation mode is {@code AUTO_THRESHOLD}.
+     *
+     * @return per-dependency threshold property
+     */
     @Input
     public abstract Property<Integer> getPerDependencySkillThreshold();
 
+    /**
+     * Output file for the single router skill mode.
+     *
+     * @return single-skill output file property
+     */
     @OutputFile
     public abstract RegularFileProperty getSkillFile();
 
+    /**
+     * Root output directory for extracted docs and generated skills.
+     *
+     * @return skills root directory property
+     */
     @OutputDirectory
     public abstract DirectoryProperty getSkillsDirectory();
-
-    @OutputDirectory
-    public abstract DirectoryProperty getResourcesDirectory();
-
-    @OutputDirectory
-    public abstract DirectoryProperty getLocalRepositoryDirectory();
 
     @TaskAction
     void resolveAgentDocs() throws IOException {
@@ -80,18 +106,19 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
                 continue;
             }
 
-            cacheSidecarArtifact(coordinate, sidecarPath);
-
-            Path extractedRoot = extractSidecarToResources(coordinate, sidecarPath);
+            Path extractedRoot = extractSidecarToSkills(coordinate, sidecarPath);
+            downloadSidecarArtifact(coordinate, sidecarPath);
             Path entrypoint = findEntrypoint(extractedRoot);
             if (entrypoint == null) {
-                getLogger().warn("Resolved sidecar for {} but could not locate agents.md entrypoint", coordinate.gav());
+                getLogger().warn("Resolved sidecar for {} but could not locate SKILL.md entrypoint", coordinate.gav());
                 continue;
             }
+            rewriteEntrypointSkillName(entrypoint, coordinate.skillName());
 
             skillEntries.add(new SkillEntry(coordinate, entrypoint));
         }
 
+        cleanupStaleManagedSkillDirectories(skillEntries);
         writeSkills(skillEntries);
     }
 
@@ -143,14 +170,15 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         return files.iterator().next().toPath();
     }
 
-    private void cacheSidecarArtifact(ModuleCoordinate coordinate, Path sidecarPath) throws IOException {
-        Path destination = toLocalRepositoryPath(coordinate);
+    private Path downloadSidecarArtifact(ModuleCoordinate coordinate, Path sidecarPath) throws IOException {
+        Path destination = toSidecarArchivePath(coordinate);
         Files.createDirectories(destination.getParent());
         Files.copy(sidecarPath, destination, StandardCopyOption.REPLACE_EXISTING);
+        return destination;
     }
 
-    private Path extractSidecarToResources(ModuleCoordinate coordinate, Path sidecarPath) throws IOException {
-        Path destination = toResourcesPath(coordinate);
+    private Path extractSidecarToSkills(ModuleCoordinate coordinate, Path sidecarPath) throws IOException {
+        Path destination = toAgentSkillDirectory(coordinate);
         deleteDirectory(destination);
         Files.createDirectories(destination);
 
@@ -165,20 +193,25 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
                 if (entry.isDirectory()) {
                     Files.createDirectories(targetPath);
                 } else {
-                    Files.createDirectories(targetPath.getParent());
+                    Path parent = targetPath.getParent();
+                    if (parent == null) {
+                        throw new IOException("Zip entry has no parent directory: " + entry.getName());
+                    }
+                    Files.createDirectories(parent);
                     Files.copy(zipInputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
                 }
                 zipInputStream.closeEntry();
             }
         }
 
+        writeOwnershipMarker(destination);
         return destination;
     }
 
     private Path findEntrypoint(Path extractedRoot) throws IOException {
         try (Stream<Path> stream = Files.walk(extractedRoot)) {
             return stream.filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().equalsIgnoreCase("agents.md"))
+                    .filter(path -> path.getFileName().toString().equalsIgnoreCase(SKILL_ENTRYPOINT_FILENAME))
                     .findFirst()
                     .orElse(null);
         }
@@ -251,12 +284,39 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         for (SkillEntry entry : entries) {
             Path skillPath = toPerDependencySkillPath(entry.coordinate());
             Files.createDirectories(skillPath.getParent());
+            writeOwnershipMarker(skillPath.getParent());
 
             String relativeEntrypoint = toRelativePath(skillPath.getParent(), entry.entrypointPath());
+            String generatedSkillName = skillPath.getParent().getFileName().toString();
             String content = template
                     .replace(GAV_PLACEHOLDER, entry.coordinate().gav())
+                    .replace(SKILL_NAME_PLACEHOLDER, generatedSkillName)
                     .replace(ENTRYPOINT_PLACEHOLDER, relativeEntrypoint);
             Files.writeString(skillPath, content);
+        }
+    }
+
+    private void cleanupStaleManagedSkillDirectories(Set<SkillEntry> entries) throws IOException {
+        Path skillsRoot = getSkillsDirectory().get().getAsFile().toPath();
+        if (Files.notExists(skillsRoot)) {
+            return;
+        }
+
+        Set<String> activeSkillFolders = new HashSet<>();
+        for (SkillEntry entry : entries) {
+            activeSkillFolders.add(entry.coordinate().skillName());
+        }
+
+        try (Stream<Path> children = Files.list(skillsRoot)) {
+            List<Path> staleManagedDirectories = children
+                    .filter(Files::isDirectory)
+                    .filter(this::isManagedDependencySkillDirectory)
+                    .filter(path -> !activeSkillFolders.contains(path.getFileName().toString()))
+                    .toList();
+
+            for (Path staleDirectory : staleManagedDirectories) {
+                deleteDirectory(staleDirectory);
+            }
         }
     }
 
@@ -303,27 +363,12 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         }
     }
 
-    private Path toLocalRepositoryPath(ModuleCoordinate coordinate) {
-        String groupPath = coordinate.group().replace('.', '/');
-        return getLocalRepositoryDirectory()
-                .get()
-                .getAsFile()
-                .toPath()
-                .resolve(groupPath)
-                .resolve(coordinate.artifact())
-                .resolve(coordinate.version())
-                .resolve(coordinate.artifact() + "-" + coordinate.version() + "-agent-docs.zip");
+    private Path toSidecarArchivePath(ModuleCoordinate coordinate) {
+        return toAgentSkillDirectory(coordinate).resolve(SIDECAR_FILENAME);
     }
 
-    private Path toResourcesPath(ModuleCoordinate coordinate) {
-        String groupPath = coordinate.group().replace('.', '/');
-        return getResourcesDirectory()
-                .get()
-                .getAsFile()
-                .toPath()
-                .resolve(groupPath)
-                .resolve(coordinate.artifact())
-                .resolve(coordinate.version());
+    private Path toAgentSkillDirectory(ModuleCoordinate coordinate) {
+        return getSkillsDirectory().get().getAsFile().toPath().resolve(coordinate.skillName());
     }
 
     private Path perDependencySkillsRoot() {
@@ -331,22 +376,44 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     }
 
     private Path toPerDependencySkillPath(ModuleCoordinate coordinate) {
-        String groupPath = coordinate.group().replace('.', '/');
         return perDependencySkillsRoot()
-                .resolve(groupPath)
-                .resolve(coordinate.artifact())
-                .resolve(coordinate.version() + ".md");
+                .resolve(coordinate.skillName())
+                .resolve(SKILL_ENTRYPOINT_FILENAME);
+    }
+
+    private boolean isManagedDependencySkillDirectory(Path directory) {
+        return Files.exists(directory.resolve(OWNERSHIP_MARKER_FILENAME));
+    }
+
+    private void writeOwnershipMarker(Path directory) throws IOException {
+        Files.writeString(directory.resolve(OWNERSHIP_MARKER_FILENAME), "");
     }
 
     private String toRelativePath(Path fromDirectory, Path toPath) {
         return fromDirectory.relativize(toPath).toString().replace('\\', '/');
     }
 
-    private record ModuleCoordinate(String group, String artifact, String version) {
-        private String gav() {
-            return group + ":" + artifact + ":" + version;
+    private void rewriteEntrypointSkillName(Path entrypoint, String skillName) throws IOException {
+        String normalized = Files.readString(entrypoint).replace("\r\n", "\n");
+        String rewritten = normalized;
+
+        if (normalized.startsWith("---\n")) {
+            int closingIndex = normalized.indexOf("\n---\n", 4);
+            if (closingIndex >= 0) {
+                String frontmatterBlock = normalized.substring(4, closingIndex);
+                String body = normalized.substring(closingIndex + 5);
+                List<String> retainedLines = frontmatterBlock.lines()
+                        .filter(line -> !line.trim().startsWith("name:"))
+                        .toList();
+                String updatedFrontmatter = "name: " + skillName
+                        + (retainedLines.isEmpty() ? "" : "\n" + String.join("\n", retainedLines));
+                rewritten = "---\n" + updatedFrontmatter + "\n---\n" + body;
+            }
+        } else {
+            rewritten = "---\nname: " + skillName + "\n---\n\n" + normalized;
         }
+
+        Files.writeString(entrypoint, rewritten);
     }
 
-    private record SkillEntry(ModuleCoordinate coordinate, Path entrypointPath) {}
 }
