@@ -14,6 +14,11 @@ scmVersion {
 
 version = scmVersion.version
 
+ext {
+    matrixGradle8Version = '8.14.5'
+    matrixGradle9Version = '9.5.1'
+}
+
 allprojects {
     group = rootProject.group
     version = rootProject.version
@@ -22,3 +27,28 @@ allprojects {
         mavenCentral()
     }
 }
+
+tasks.register('testMatrixGradle8') {
+    group = 'verification'
+    description = "Runs all plugin and integration tests against Gradle ${matrixGradle8Version} via TestKit."
+    dependsOn(
+            ':agent-docs-publish-gradle-plugin:testGradle8',
+            ':agent-docs-resolve-gradle-plugin:testGradle8',
+            ':agent-docs-integration-tests:testGradle8')
+}
+
+tasks.register('testMatrixGradle9') {
+    group = 'verification'
+    description = "Runs all plugin and integration tests against Gradle ${matrixGradle9Version} via TestKit."
+    dependsOn(
+            ':agent-docs-publish-gradle-plugin:testGradle9',
+            ':agent-docs-resolve-gradle-plugin:testGradle9',
+            ':agent-docs-integration-tests:testGradle9')
+}
+
+tasks.register('testMatrix') {
+    group = 'verification'
+    description = 'Runs both Gradle 8.x and 9.x TestKit compatibility lanes.'
+    dependsOn('testMatrixGradle8', 'testMatrixGradle9')
+}
+

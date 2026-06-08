@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ResolveAgentDocsTaskTest {
+    private static final String DEFAULT_TEST_GRADLE_VERSION = "9.5.1";
     private static final String DEFAULT_DEPENDENCIES = """
                 dependencies {
                     implementation 'com.example:dep-impl:1.0.0'
@@ -257,10 +258,15 @@ class ResolveAgentDocsTaskTest {
 
     private BuildResult runResolve(String... arguments) {
         return GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
                 .withProjectDir(projectDir.toFile())
                 .withPluginClasspath()
                 .withArguments(arguments)
                 .build();
+    }
+
+    private static String testGradleVersion() {
+        return System.getProperty("agentDocs.test.gradleVersion", DEFAULT_TEST_GRADLE_VERSION);
     }
 
 

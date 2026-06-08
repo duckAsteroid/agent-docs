@@ -58,6 +58,9 @@ If you also maintain libraries and want to publish your own sidecar docs, see [p
 ```bash
 ./gradlew build
 ./gradlew :agent-docs-resolve-gradle-plugin:test
+./gradlew testMatrix
+./gradlew testMatrixGradle8
+./gradlew testMatrixGradle9
 ```
 
 ## Versioning and releases

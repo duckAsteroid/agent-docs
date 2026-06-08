@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class AgentDocsPublishPluginTest {
+    private static final String DEFAULT_TEST_GRADLE_VERSION = "9.5.1";
 
     @TempDir
     Path projectDir;
@@ -33,9 +34,7 @@ class AgentDocsPublishPluginTest {
         writeFile(projectDir.resolve("src/agent-docs/sKiLl.Md"), skillFrontmatter("agent-docs", "Build and publish agent docs sidecars."));
         writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("assemble")
                 .build();
 
@@ -67,9 +66,7 @@ class AgentDocsPublishPluginTest {
                 }
                 """);
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
@@ -87,9 +84,7 @@ class AgentDocsPublishPluginTest {
                 """);
         writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
@@ -108,9 +103,7 @@ class AgentDocsPublishPluginTest {
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Primary skill."));
         writeFile(projectDir.resolve("src/agent-docs/skill.md"), skillFrontmatter("agent-docs", "Duplicate skill."));
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
@@ -133,9 +126,7 @@ class AgentDocsPublishPluginTest {
         writeFile(projectDir.resolve("docs/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs with a custom docs directory."));
         writeFile(projectDir.resolve("docs/agent-docs/custom/custom.md"), "custom\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .build();
 
@@ -187,9 +178,7 @@ class AgentDocsPublishPluginTest {
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs alongside a Maven publication."));
         writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("publishToMavenLocal", "-Dmaven.repo.local=" + localRepo)
                 .build();
 
@@ -213,9 +202,7 @@ class AgentDocsPublishPluginTest {
                 """);
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), "# Missing frontmatter\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
@@ -233,9 +220,7 @@ class AgentDocsPublishPluginTest {
                 """);
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("wrong-skill", "Name mismatch should fail validation."));
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .build();
 
@@ -265,9 +250,7 @@ class AgentDocsPublishPluginTest {
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Validate standard folders."));
         writeFile(projectDir.resolve("src/agent-docs/references"), "not-a-directory\n");
 
-        BuildResult result = GradleRunner.create()
-                .withProjectDir(projectDir.toFile())
-                .withPluginClasspath()
+        BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
                 .buildAndFail();
 
@@ -277,6 +260,17 @@ class AgentDocsPublishPluginTest {
     private static void writeFile(Path filePath, String content) throws IOException {
         Files.createDirectories(filePath.getParent());
         Files.writeString(filePath, content);
+    }
+
+    private static GradleRunner gradleRunner(Path projectDir) {
+        return GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath();
+    }
+
+    private static String testGradleVersion() {
+        return System.getProperty("agentDocs.test.gradleVersion", DEFAULT_TEST_GRADLE_VERSION);
     }
 
     private static String skillFrontmatter(String name, String description) {

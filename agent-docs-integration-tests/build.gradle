@@ -5,11 +5,34 @@ plugins {
 dependencies {
     testImplementation gradleTestKit()
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {
     useJUnitPlatform()
     systemProperty 'agentDocs.repoRoot', rootProject.projectDir.absolutePath
+}
+
+def gradle8TestVersion = rootProject.ext.matrixGradle8Version
+def gradle9TestVersion = rootProject.ext.matrixGradle9Version
+def baseTestTask = tasks.named('test', Test)
+
+def configureGradleMatrixTest = { Test task, String gradleVersion ->
+    task.group = 'verification'
+    task.description = "Runs integration tests using Gradle ${gradleVersion}."
+    task.useJUnitPlatform()
+    task.systemProperty 'agentDocs.repoRoot', rootProject.projectDir.absolutePath
+    task.systemProperty 'agentDocs.test.gradleVersion', gradleVersion
+    task.testClassesDirs = baseTestTask.get().testClassesDirs
+    task.classpath = baseTestTask.get().classpath
+}
+
+tasks.register('testGradle8', Test) {
+    configureGradleMatrixTest(it, gradle8TestVersion)
+}
+
+tasks.register('testGradle9', Test) {
+    configureGradleMatrixTest(it, gradle9TestVersion)
 }
 
 java {
