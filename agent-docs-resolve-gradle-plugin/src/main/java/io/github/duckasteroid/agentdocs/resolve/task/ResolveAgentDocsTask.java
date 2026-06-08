@@ -16,6 +16,7 @@ import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.work.DisableCachingByDefault;
 
 import javax.inject.Inject;
 
@@ -26,6 +27,7 @@ import javax.inject.Inject;
  * {@code .agent-docs}, removes stale marker-owned dependency folders, and generates one
  * skill entrypoint per resolved dependency sidecar.
  */
+@DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
     @Inject
     protected abstract ConfigurationContainer getConfigurations();
