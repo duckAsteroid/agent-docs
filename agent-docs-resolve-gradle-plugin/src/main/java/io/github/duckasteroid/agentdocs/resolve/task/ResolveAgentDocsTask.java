@@ -68,33 +68,53 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     void resolveAgentDocs() throws IOException {
         Path skillsRoot = getSkillsDirectory().get().getAsFile().toPath();
         Set<ModuleCoordinate> candidates = new LinkedHashSet<>();
+        int invalidCoordinates = 0;
         for (String coordinate : getDependencyCoordinates().get()) {
             String[] segments = coordinate.split(":", 3);
             if (segments.length != 3) {
+                invalidCoordinates++;
                 continue;
             }
             candidates.add(new ModuleCoordinate(segments[0], segments[1], segments[2]));
         }
+        getLogger().info(
+                "Resolving agent-docs sidecars from {} coordinates ({} valid, {} invalid) into {}",
+                getDependencyCoordinates().get().size(),
+                candidates.size(),
+                invalidCoordinates,
+                skillsRoot);
+
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
         SidecarArtifactResolver sidecarResolver =
                 new SidecarArtifactResolver(getConfigurations(), getDependencies(), getLogger());
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
         SkillWriter skillWriter = new SkillWriter(getClass().getClassLoader());
 
+        int sidecarsResolved = 0;
+        int skillsMaterialized = 0;
+
         for (ModuleCoordinate coordinate : candidates) {
+            getLogger().debug("Checking agent-docs sidecar for {}", coordinate.gav());
             Path sidecarPath = sidecarResolver.resolveSidecar(coordinate);
             if (sidecarPath == null) {
                 continue;
             }
+            sidecarsResolved++;
 
             SkillEntry entry = skillDirectoryManager.materializeSkill(coordinate, sidecarPath, skillsRoot);
             if (entry == null) {
                 continue;
             }
             skillEntries.add(entry);
+            skillsMaterialized++;
         }
 
         skillDirectoryManager.cleanupStaleManagedSkillDirectories(skillEntries, skillsRoot);
         skillWriter.writeSkills(skillEntries, skillsRoot);
+        getLogger().lifecycle(
+                "resolveAgentDocs: inspected {} dependencies, found {} sidecars, materialized {} skills",
+                candidates.size(),
+                sidecarsResolved,
+                skillsMaterialized);
     }
 }
