@@ -1,5 +1,7 @@
 package io.github.duckasteroid.agentdocs.resolve;
 
+import java.util.LinkedHashSet;
+
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -29,6 +31,25 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
             task.setDescription("Resolves dependency sidecars and generates per-dependency SKILL files.");
             task.getOutputs().upToDateWhen(spec -> false);
             task.getConfigurationName().set(extension.getConfigurationName());
+            task.getDependencyCoordinates().set(extension.getConfigurationName()
+                    .map(name -> project.getConfigurations().getByName(name))
+                    .map(configuration -> {
+                        LinkedHashSet<String> coordinates = new LinkedHashSet<>();
+                        configuration.getAllDependencies().forEach(dependency -> {
+                            String group = dependency.getGroup();
+                            String artifact = dependency.getName();
+                            String version = dependency.getVersion();
+                            if (group == null
+                                    || group.isBlank()
+                                    || artifact.isBlank()
+                                    || version == null
+                                    || version.isBlank()) {
+                                return;
+                            }
+                            coordinates.add(group + ":" + artifact + ":" + version);
+                        });
+                        return coordinates.stream().toList();
+                    }));
             task.getSkillsDirectory().set(extension.getSkillsDirectory());
         });
     }

@@ -4,7 +4,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
-import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
@@ -19,13 +19,11 @@ final class ResolvedDependencyCollector {
     /**
      * Resolves first-level dependencies and returns valid Maven coordinates.
      *
-     * @param project current Gradle project
-     * @param configurationName configuration to inspect
+     * @param configuration configuration to inspect
      * @return ordered set of direct dependency coordinates
      */
-    static Set<ModuleCoordinate> collect(Project project, String configurationName) {
+    static Set<ModuleCoordinate> collect(Configuration configuration) {
         Set<ModuleCoordinate> candidates = new LinkedHashSet<>();
-        var configuration = project.getConfigurations().getByName(configurationName);
         ResolvedComponentResult root = configuration.getIncoming().getResolutionResult().getRootComponent().get();
 
         root.getDependencies().forEach(dependency -> {

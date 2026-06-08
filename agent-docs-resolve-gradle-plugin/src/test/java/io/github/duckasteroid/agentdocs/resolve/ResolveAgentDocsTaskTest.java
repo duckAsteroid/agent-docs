@@ -171,6 +171,39 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.notExists(projectDir.resolve("app/.agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
     }
 
+    @Test
+    void resolveAgentDocsSupportsConfigurationCache() throws IOException {
+        Path upstreamRepo = projectDir.resolve("upstream-repo");
+        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
+
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeConsumerBuildFile("""
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/example/App.java"), """
+                package example;
+                public class App {
+                    public static String value() {
+                        return "ok";
+                    }
+                }
+                """);
+
+        BuildResult first = runResolve("resolveAgentDocs", "--configuration-cache");
+        BuildResult second = runResolve("resolveAgentDocs", "--configuration-cache");
+
+        assertNotNull(first.task(":resolveAgentDocs"));
+        assertNotNull(second.task(":resolveAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, first.task(":resolveAgentDocs").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, second.task(":resolveAgentDocs").getOutcome());
+        assertTrue(first.getOutput().contains("Configuration cache entry"));
+        assertTrue(second.getOutput().contains("Configuration cache entry"));
+        assertTrue(!first.getOutput().contains("Configuration cache problems found in this build."));
+        assertTrue(!second.getOutput().contains("Configuration cache problems found in this build."));
+    }
+
     private BuildResult runResolve() {
         return runResolve("resolveAgentDocs");
     }

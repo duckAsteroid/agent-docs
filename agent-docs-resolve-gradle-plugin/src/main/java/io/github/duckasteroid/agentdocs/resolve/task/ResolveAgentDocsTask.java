@@ -8,11 +8,16 @@ import java.util.Set;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.SkillEntry;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
+
+import javax.inject.Inject;
 
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
@@ -22,6 +27,12 @@ import org.gradle.api.tasks.TaskAction;
  * skill entrypoint per resolved dependency sidecar.
  */
 public abstract class ResolveAgentDocsTask extends DefaultTask {
+    @Inject
+    protected abstract ConfigurationContainer getConfigurations();
+
+    @Inject
+    protected abstract DependencyHandler getDependencies();
+
     /**
      * Gradle configuration name to inspect for direct dependencies.
      *
@@ -29,6 +40,15 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
      */
     @Input
     public abstract Property<String> getConfigurationName();
+
+    /**
+     * Direct dependency coordinates from the configured classpath in {@code group:name:version}
+     * form, precomputed during task configuration.
+     *
+     * @return direct dependency coordinates
+     */
+    @Input
+    public abstract ListProperty<String> getDependencyCoordinates();
 
     /**
      * Root output directory for extracted docs and generated skills.
@@ -47,10 +67,17 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     @TaskAction
     void resolveAgentDocs() throws IOException {
         Path skillsRoot = getSkillsDirectory().get().getAsFile().toPath();
-        Set<ModuleCoordinate> candidates =
-                ResolvedDependencyCollector.collect(getProject(), getConfigurationName().get());
+        Set<ModuleCoordinate> candidates = new LinkedHashSet<>();
+        for (String coordinate : getDependencyCoordinates().get()) {
+            String[] segments = coordinate.split(":", 3);
+            if (segments.length != 3) {
+                continue;
+            }
+            candidates.add(new ModuleCoordinate(segments[0], segments[1], segments[2]));
+        }
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
-        SidecarArtifactResolver sidecarResolver = new SidecarArtifactResolver(getProject(), getLogger());
+        SidecarArtifactResolver sidecarResolver =
+                new SidecarArtifactResolver(getConfigurations(), getDependencies(), getLogger());
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
         SkillWriter skillWriter = new SkillWriter(getClass().getClassLoader());
 
