@@ -51,9 +51,9 @@ class ResolveAgentDocsTaskTest {
         assertNotNull(result.task(":resolveAgentDocs"));
         assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
 
-        Path implRoot = projectDir.resolve(".agent/skills/com-example-dep-impl-1-0-0");
-        Path apiRoot = projectDir.resolve(".agent/skills/com-example-dep-api-2-0-0");
-        Path missingRoot = projectDir.resolve(".agent/skills/com-example-dep-no-sidecar-3-0-0");
+        Path implRoot = projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0");
+        Path apiRoot = projectDir.resolve(".agents/skills/com-example-dep-api-2-0-0");
+        Path missingRoot = projectDir.resolve(".agents/skills/com-example-dep-no-sidecar-3-0-0");
 
         assertTrue(Files.exists(implRoot.resolve("agent-docs.zip")));
         assertTrue(Files.exists(apiRoot.resolve("agent-docs.zip")));
@@ -69,9 +69,9 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.readString(apiEntrypoint).contains("name: com-example-dep-api-2-0-0"));
 
         Path implGeneratedSkill =
-                projectDir.resolve(".agent/skills/agent-docs-dependencies/com-example-dep-impl-1-0-0/SKILL.md");
+                projectDir.resolve(".agents/skills/agent-docs-dependencies/com-example-dep-impl-1-0-0/SKILL.md");
         Path apiGeneratedSkill =
-                projectDir.resolve(".agent/skills/agent-docs-dependencies/com-example-dep-api-2-0-0/SKILL.md");
+                projectDir.resolve(".agents/skills/agent-docs-dependencies/com-example-dep-api-2-0-0/SKILL.md");
         assertTrue(Files.exists(implGeneratedSkill));
         assertTrue(Files.exists(apiGeneratedSkill));
         assertTrue(Files.exists(implGeneratedSkill.getParent().resolve(".agent-docs")));
@@ -106,12 +106,12 @@ class ResolveAgentDocsTaskTest {
                 """);
         runResolve();
 
-        Path implSkillDir = projectDir.resolve(".agent/skills/com-example-dep-impl-1-0-0");
-        Path apiSkillDir = projectDir.resolve(".agent/skills/com-example-dep-api-2-0-0");
+        Path implSkillDir = projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0");
+        Path apiSkillDir = projectDir.resolve(".agents/skills/com-example-dep-api-2-0-0");
         assertTrue(Files.exists(implSkillDir.resolve(".agent-docs")));
         assertTrue(Files.exists(apiSkillDir.resolve(".agent-docs")));
 
-        Path manualSkillDir = projectDir.resolve(".agent/skills/custom-manual-skill");
+        Path manualSkillDir = projectDir.resolve(".agents/skills/custom-manual-skill");
         writeFile(manualSkillDir.resolve("SKILL.md"), "# custom\n");
 
         writeConsumerBuildFile("""
@@ -127,11 +127,59 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.exists(manualSkillDir));
     }
 
+    @Test
+    void resolveAgentDocsFromSubprojectWritesToRootAgentsDirectory() throws IOException {
+        Path upstreamRepo = projectDir.resolve("upstream-repo");
+        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
+
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'consumer'
+                include 'app'
+                """);
+
+        writeFile(projectDir.resolve("build.gradle"), "// root build\n");
+        writeFile(projectDir.resolve("app/build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+
+                repositories {
+                    maven {
+                        url = uri('../upstream-repo')
+                    }
+                }
+
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                }
+                """);
+        writeFile(projectDir.resolve("app/src/main/java/example/App.java"), """
+                package example;
+                public class App {
+                    public static String value() {
+                        return "ok";
+                    }
+                }
+                """);
+
+        BuildResult result = runResolve(":app:resolveAgentDocs");
+
+        assertNotNull(result.task(":app:resolveAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":app:resolveAgentDocs").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+        assertTrue(Files.notExists(projectDir.resolve("app/.agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+    }
+
     private BuildResult runResolve() {
+        return runResolve("resolveAgentDocs");
+    }
+
+    private BuildResult runResolve(String... arguments) {
         return GradleRunner.create()
                 .withProjectDir(projectDir.toFile())
                 .withPluginClasspath()
-                .withArguments("resolveAgentDocs")
+                .withArguments(arguments)
                 .build();
     }
 

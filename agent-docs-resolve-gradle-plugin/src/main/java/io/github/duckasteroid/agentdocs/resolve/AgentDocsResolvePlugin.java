@@ -22,7 +22,7 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
 
         extension.getConfigurationName().convention("compileClasspath");
         extension.getSkillsDirectory().convention(
-                project.getLayout().getProjectDirectory().dir(".agent/skills"));
+                project.getRootProject().getLayout().getProjectDirectory().dir(".agents/skills"));
 
         project.getTasks().register("resolveAgentDocs", ResolveAgentDocsTask.class, task -> {
             task.setGroup("agent docs");

@@ -45,11 +45,11 @@ class PublishResolveIntegrationTest {
         assertNotNull(consumerResult.task(":resolveAgentDocs"));
         assertEquals(TaskOutcome.SUCCESS, consumerResult.task(":resolveAgentDocs").getOutcome());
 
-        Path extractedSkill = consumerDir.resolve(".agent/skills").resolve(REWRITTEN_SKILL_NAME).resolve("SKILL.md");
+        Path extractedSkill = consumerDir.resolve(".agents/skills").resolve(REWRITTEN_SKILL_NAME).resolve("SKILL.md");
         assertTrue(Files.exists(extractedSkill));
         assertTrue(Files.readString(extractedSkill).contains("name: " + REWRITTEN_SKILL_NAME));
 
-        Path generatedResolverSkill = consumerDir.resolve(".agent/skills/agent-docs-dependencies")
+        Path generatedResolverSkill = consumerDir.resolve(".agents/skills/agent-docs-dependencies")
                 .resolve(REWRITTEN_SKILL_NAME)
                 .resolve("SKILL.md");
         assertTrue(Files.exists(generatedResolverSkill));
