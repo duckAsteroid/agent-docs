@@ -1,8 +1,6 @@
 package io.github.duckasteroid.agentdocs.resolve.task;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -13,23 +11,6 @@ import java.util.stream.Stream;
  */
 final class ResolveFilesystemSupport {
     private ResolveFilesystemSupport() {
-    }
-
-    /**
-     * Loads a text template from classpath resources.
-     *
-     * @param classLoader classloader used to resolve resources
-     * @param resourcePath classpath-relative resource path
-     * @return UTF-8 decoded template content
-     * @throws IOException when the resource is missing or unreadable
-     */
-    static String loadTemplate(ClassLoader classLoader, String resourcePath) throws IOException {
-        try (InputStream templateStream = classLoader.getResourceAsStream(resourcePath)) {
-            if (templateStream == null) {
-                throw new IOException("Unable to load skill template resource: " + resourcePath);
-            }
-            return new String(templateStream.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 
     /**
@@ -70,14 +51,4 @@ final class ResolveFilesystemSupport {
         Files.writeString(directory.resolve(markerFilename), "");
     }
 
-    /**
-     * Converts a path into a normalized forward-slash relative path.
-     *
-     * @param fromDirectory base directory
-     * @param toPath target path
-     * @return relative path with {@code /} separators
-     */
-    static String toRelativePath(Path fromDirectory, Path toPath) {
-        return fromDirectory.relativize(toPath).toString().replace('\\', '/');
-    }
 }

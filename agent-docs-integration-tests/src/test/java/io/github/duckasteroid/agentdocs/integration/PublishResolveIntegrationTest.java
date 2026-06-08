@@ -7,6 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
@@ -40,6 +44,14 @@ class PublishResolveIntegrationTest {
         Path publishedBase = mavenRepo.resolve("com/example/sample-lib/1.2.3");
         assertTrue(Files.exists(publishedBase.resolve("sample-lib-1.2.3.jar")));
         assertTrue(Files.exists(publishedBase.resolve("sample-lib-1.2.3-agent-docs.zip")));
+        assertZipContains(
+                publishedBase.resolve("sample-lib-1.2.3-agent-docs.zip"),
+                Set.of(
+                        "SKILL.md",
+                        "references/overview.md",
+                        "references/guides/getting-started.md",
+                        "assets/images/logo.txt",
+                        "scripts/setup.sh"));
 
         createConsumerProject(consumerDir, mavenRepo, repoRoot);
         BuildResult consumerResult = runGradle(consumerDir, "resolveAgentDocs");
@@ -49,15 +61,14 @@ class PublishResolveIntegrationTest {
         Path extractedSkill = consumerDir.resolve(".agents/skills").resolve(REWRITTEN_SKILL_NAME).resolve("SKILL.md");
         assertTrue(Files.exists(extractedSkill));
         assertTrue(Files.readString(extractedSkill).contains("name: " + REWRITTEN_SKILL_NAME));
+        Path extractedSkillRoot = consumerDir.resolve(".agents/skills").resolve(REWRITTEN_SKILL_NAME);
+        assertTrue(Files.exists(extractedSkillRoot.resolve("references/overview.md")));
+        assertTrue(Files.exists(extractedSkillRoot.resolve("references/guides/getting-started.md")));
+        assertTrue(Files.exists(extractedSkillRoot.resolve("assets/images/logo.txt")));
+        assertTrue(Files.exists(extractedSkillRoot.resolve("scripts/setup.sh")));
 
-        Path generatedResolverSkill = consumerDir.resolve(".agents/skills/agent-docs-dependencies")
-                .resolve(REWRITTEN_SKILL_NAME)
-                .resolve("SKILL.md");
-        assertTrue(Files.exists(generatedResolverSkill));
-
-        String generatedSkillContent = Files.readString(generatedResolverSkill);
-        assertTrue(generatedSkillContent.contains("name: " + REWRITTEN_SKILL_NAME));
-        assertTrue(generatedSkillContent.contains("../../" + REWRITTEN_SKILL_NAME + "/SKILL.md"));
+        Path unexpectedDependencySkillsIndex = consumerDir.resolve(".agents/skills/agent-docs-dependencies");
+        assertTrue(Files.notExists(unexpectedDependencySkillsIndex));
     }
 
     private void createProducerProject(Path projectDir, Path mavenRepo, String repoRoot) throws IOException {
@@ -115,6 +126,9 @@ class PublishResolveIntegrationTest {
                 See references for dependency usage.
                 """);
         writeFile(projectDir.resolve("src/agent-docs/references/overview.md"), "# Overview\n");
+        writeFile(projectDir.resolve("src/agent-docs/references/guides/getting-started.md"), "# Getting started\n");
+        writeFile(projectDir.resolve("src/agent-docs/assets/images/logo.txt"), "ASCII LOGO\n");
+        writeFile(projectDir.resolve("src/agent-docs/scripts/setup.sh"), "#!/usr/bin/env bash\necho setup\n");
     }
 
     private void createConsumerProject(Path projectDir, Path mavenRepo, String repoRoot) throws IOException {
@@ -181,5 +195,20 @@ class PublishResolveIntegrationTest {
 
     private static String escapeForGroovyString(String value) {
         return value.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    private static void assertZipContains(Path zipPath, Set<String> expectedEntries) throws IOException {
+        Set<String> actualEntries = new TreeSet<>();
+        try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipPath))) {
+            ZipEntry entry;
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                actualEntries.add(entry.getName());
+                zipInputStream.closeEntry();
+            }
+        }
+
+        for (String expectedEntry : expectedEntries) {
+            assertTrue(actualEntries.contains(expectedEntry), "Missing sidecar entry: " + expectedEntry);
+        }
     }
 }

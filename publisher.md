@@ -63,7 +63,7 @@ Consumers that use the resolver plugin and depend on `com.acme:weather-core:1.4.
 com.acme:weather-core:1.4.0:agent-docs@zip
 ```
 
-Resolved sidecars are then copied into root `.agents/skills/<gav-skill-name>/agent-docs.zip`, extracted into root `.agents/skills/<gav-skill-name>/` with skill-spec layout (`SKILL.md`, `references/`, `assets/`, `scripts/`), rewritten so extracted `SKILL.md` frontmatter `name` matches the rewritten folder, marked with `.agent-docs`, and surfaced through generated skills under `.agents/skills/...` for local LLM agents.
+Resolved sidecars are then extracted into root `.agents/skills/<gav-skill-name>/` with skill-spec layout (`SKILL.md`, `references/`, `assets/`, `scripts/`), rewritten so extracted `SKILL.md` frontmatter `name` matches the rewritten folder, and marked with `.agent-docs` for managed cleanup.
 
 ## More details
 

@@ -20,10 +20,9 @@ import org.gradle.work.DisableCachingByDefault;
 
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
- * stores each sidecar under flat GAV skill directories in the local project skills tree,
- * extracts docs into dependency-scoped directories, marks managed folders with
- * {@code .agent-docs}, removes stale marker-owned dependency folders, and generates one
- * skill entrypoint per resolved dependency sidecar.
+it  * extracts docs into dependency-scoped directories in the local project skills tree, marks
+ * managed folders with
+ * {@code .agent-docs}, and removes stale marker-owned dependency folders.
  */
 @DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
@@ -63,7 +62,7 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
 
     /**
      * Resolves dependency sidecars, extracts docs into managed skill directories, prunes stale
-     * managed folders, and writes generated skill entrypoints.
+     * managed folders.
      *
      * @throws IOException when filesystem operations fail
      */
@@ -89,7 +88,6 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
 
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
-        SkillWriter skillWriter = new SkillWriter(getClass().getClassLoader());
 
         int sidecarsResolved = 0;
         int skillsMaterialized = 0;
@@ -114,7 +112,6 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         }
 
         skillDirectoryManager.cleanupStaleManagedSkillDirectories(skillEntries, skillsRoot);
-        skillWriter.writeSkills(skillEntries, skillsRoot);
         getLogger().lifecycle(
                 "resolveAgentDocs: inspected {} dependencies, found {} sidecars, materialized {} skills",
                 candidates.size(),

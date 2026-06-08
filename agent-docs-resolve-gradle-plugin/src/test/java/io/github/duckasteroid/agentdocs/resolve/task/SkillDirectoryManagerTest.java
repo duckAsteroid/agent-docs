@@ -35,7 +35,7 @@ class SkillDirectoryManagerTest {
 
         assertNotNull(entry);
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
-        assertTrue(Files.exists(skillDir.resolve("agent-docs.zip")));
+        assertTrue(Files.notExists(skillDir.resolve("agent-docs.zip")));
         assertTrue(Files.exists(skillDir.resolve(".agent-docs")));
         assertTrue(Files.readString(entry.entrypointPath()).contains("name: " + coordinate.skillName()));
     }

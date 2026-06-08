@@ -19,7 +19,6 @@ import org.gradle.api.logging.Logger;
  * Manages extracted dependency skill directories and stale managed-folder cleanup.
  */
 final class SkillDirectoryManager {
-    private static final String SIDECAR_FILENAME = "agent-docs.zip";
     private static final String SKILL_ENTRYPOINT_FILENAME = "SKILL.md";
     private static final String OWNERSHIP_MARKER_FILENAME = ".agent-docs";
 
@@ -33,6 +32,7 @@ final class SkillDirectoryManager {
     SkillDirectoryManager(Logger logger) {
         this.logger = logger;
     }
+
 
     /**
      * Extracts a dependency sidecar into the managed skill directory and returns the entry.
@@ -49,7 +49,6 @@ final class SkillDirectoryManager {
         Files.createDirectories(destination);
 
         extractSidecar(destination, sidecarPath);
-        Files.copy(sidecarPath, destination.resolve(SIDECAR_FILENAME), StandardCopyOption.REPLACE_EXISTING);
         ResolveFilesystemSupport.writeOwnershipMarker(destination, OWNERSHIP_MARKER_FILENAME);
 
         Path entrypoint = findEntrypoint(destination);

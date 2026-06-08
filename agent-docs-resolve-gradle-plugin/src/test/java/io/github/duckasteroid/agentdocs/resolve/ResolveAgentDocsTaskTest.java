@@ -29,7 +29,7 @@ class ResolveAgentDocsTaskTest {
     Path projectDir;
 
     @Test
-    void resolveAgentDocsDownloadsExtractsAndGeneratesPerDependencySkills() throws IOException {
+    void resolveAgentDocsDownloadsAndExtractsSkills() throws IOException {
         Path upstreamRepo = projectDir.resolve("upstream-repo");
 
         writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
@@ -56,8 +56,8 @@ class ResolveAgentDocsTaskTest {
         Path apiRoot = projectDir.resolve(".agents/skills/com-example-dep-api-2-0-0");
         Path missingRoot = projectDir.resolve(".agents/skills/com-example-dep-no-sidecar-3-0-0");
 
-        assertTrue(Files.exists(implRoot.resolve("agent-docs.zip")));
-        assertTrue(Files.exists(apiRoot.resolve("agent-docs.zip")));
+        assertTrue(Files.notExists(implRoot.resolve("agent-docs.zip")));
+        assertTrue(Files.notExists(apiRoot.resolve("agent-docs.zip")));
         assertTrue(Files.notExists(missingRoot.resolve("agent-docs.zip")));
 
         Path implEntrypoint = implRoot.resolve("SKILL.md");
@@ -69,16 +69,6 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.readString(implEntrypoint).contains("name: com-example-dep-impl-1-0-0"));
         assertTrue(Files.readString(apiEntrypoint).contains("name: com-example-dep-api-2-0-0"));
 
-        Path implGeneratedSkill =
-                projectDir.resolve(".agents/skills/agent-docs-dependencies/com-example-dep-impl-1-0-0/SKILL.md");
-        Path apiGeneratedSkill =
-                projectDir.resolve(".agents/skills/agent-docs-dependencies/com-example-dep-api-2-0-0/SKILL.md");
-        assertTrue(Files.exists(implGeneratedSkill));
-        assertTrue(Files.exists(apiGeneratedSkill));
-        assertTrue(Files.exists(implGeneratedSkill.getParent().resolve(".agent-docs")));
-        assertTrue(Files.exists(apiGeneratedSkill.getParent().resolve(".agent-docs")));
-        assertTrue(Files.readString(implGeneratedSkill).contains("name: com-example-dep-impl-1-0-0"));
-        assertTrue(Files.readString(apiGeneratedSkill).contains("name: com-example-dep-api-2-0-0"));
     }
 
     @Test
@@ -168,8 +158,8 @@ class ResolveAgentDocsTaskTest {
 
         assertNotNull(result.task(":app:resolveAgentDocs"));
         assertEquals(TaskOutcome.SUCCESS, result.task(":app:resolveAgentDocs").getOutcome());
-        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
-        assertTrue(Files.notExists(projectDir.resolve("app/.agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/SKILL.md")));
+        assertTrue(Files.notExists(projectDir.resolve("app/.agents/skills/com-example-dep-impl-1-0-0/SKILL.md")));
     }
 
     @Test
@@ -251,7 +241,7 @@ class ResolveAgentDocsTaskTest {
         assertEquals(TaskOutcome.SUCCESS, result.task(":persistence-neo4j:resolveAgentDocs").getOutcome());
         assertTrue(!result.getOutput().contains("was attempted without an exclusive lock"));
         assertTrue(result.getOutput().contains("found 1 sidecars, materialized 1 skills"));
-        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/SKILL.md")));
     }
 
     @Test
@@ -309,7 +299,7 @@ class ResolveAgentDocsTaskTest {
         assertTrue(!second.getOutput().contains("was attempted without an exclusive lock"));
         assertTrue(first.getOutput().contains("found 1 sidecars, materialized 1 skills"));
         assertTrue(second.getOutput().contains("found 1 sidecars, materialized 1 skills"));
-        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/SKILL.md")));
     }
 
     private BuildResult runResolve() {

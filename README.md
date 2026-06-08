@@ -35,13 +35,7 @@ Resolve docs sidecars and generate local agent files:
 ./gradlew resolveAgentDocs
 ```
 
-In this fictional example, the resolver attempts to fetch `com.acme:weather-core:1.4.0:agent-docs@zip`, copies it into:
-
-```text
-.agents/skills/com.acme__weather-core__1.4.0/agent-docs.zip
-```
-
-It also extracts docs into:
+In this fictional example, the resolver attempts to fetch `com.acme:weather-core:1.4.0:agent-docs@zip` and extracts docs into:
 
 ```text
 .agents/skills/com.acme__weather-core__1.4.0/
@@ -74,11 +68,10 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 ## Modules
 
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
-- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, stores each sidecar under root `.agents/skills/<gav-skill-name>/agent-docs.zip`, extracts docs under root `.agents/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, removes stale marker-owned dependency skill folders, and generates one dependency skill per resolved sidecar at `.agents/skills/agent-docs-dependencies/<gav-skill-name>/SKILL.md`.
+- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, extracts docs under root `.agents/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, and removes stale marker-owned dependency skill folders.
 
 Notes:
 
-- Legacy `.agents/skills/SKILL.md` single-index output is cleaned up by the resolver.
 - Dependency folder names use a resolver rewrite strategy that enforces Agent Skills name constraints (`[a-z0-9-]`, no edge/consecutive hyphens, max 64 chars) and appends a hash suffix when truncation is needed.
 
 ## License
