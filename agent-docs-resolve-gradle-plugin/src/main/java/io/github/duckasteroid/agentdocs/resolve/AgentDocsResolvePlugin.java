@@ -1,6 +1,8 @@
 package io.github.duckasteroid.agentdocs.resolve;
 
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import org.gradle.api.Plugin;
@@ -31,7 +33,7 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
             task.setDescription("Resolves dependency sidecars and generates per-dependency SKILL files.");
             task.getOutputs().upToDateWhen(spec -> false);
             task.getConfigurationName().set(extension.getConfigurationName());
-            task.getDependencyCoordinates().set(extension.getConfigurationName()
+            var dependencyCoordinates = extension.getConfigurationName()
                     .map(name -> project.getConfigurations().getByName(name))
                     .map(configuration -> {
                         LinkedHashSet<String> coordinates = new LinkedHashSet<>();
@@ -49,7 +51,33 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
                             coordinates.add(group + ":" + artifact + ":" + version);
                         });
                         return coordinates.stream().toList();
-                    }));
+                    });
+            task.getDependencyCoordinates().set(dependencyCoordinates);
+            task.getResolvedSidecarPaths().set(dependencyCoordinates.map(coordinates -> {
+                Map<String, String> resolvedSidecars = new LinkedHashMap<>();
+                for (String coordinate : coordinates) {
+                    String sidecarNotation = coordinate + ":agent-docs@zip";
+                    project.getLogger().info("Attempting to resolve agent-docs sidecar {}", sidecarNotation);
+
+                    var detached = project.getConfigurations().detachedConfiguration(
+                            project.getDependencies().create(sidecarNotation));
+                    detached.setTransitive(false);
+
+                    var files = detached.getIncoming()
+                            .artifactView(view -> view.lenient(true))
+                            .getFiles()
+                            .getFiles();
+                    if (files.isEmpty()) {
+                        project.getLogger().info("No agent-docs sidecar found for {}", coordinate);
+                        continue;
+                    }
+
+                    var resolved = files.iterator().next();
+                    project.getLogger().info("Resolved agent-docs sidecar for {} at {}", coordinate, resolved.toPath());
+                    resolvedSidecars.put(coordinate, resolved.getAbsolutePath());
+                }
+                return resolvedSidecars;
+            }));
             task.getSkillsDirectory().set(extension.getSkillsDirectory());
         });
     }

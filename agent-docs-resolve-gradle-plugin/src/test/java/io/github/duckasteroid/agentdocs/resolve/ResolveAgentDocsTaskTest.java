@@ -250,6 +250,66 @@ class ResolveAgentDocsTaskTest {
         assertNotNull(result.task(":persistence-neo4j:resolveAgentDocs"));
         assertEquals(TaskOutcome.SUCCESS, result.task(":persistence-neo4j:resolveAgentDocs").getOutcome());
         assertTrue(!result.getOutput().contains("was attempted without an exclusive lock"));
+        assertTrue(result.getOutput().contains("found 1 sidecars, materialized 1 skills"));
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
+    }
+
+    @Test
+    void resolveAgentDocsFromSubprojectReusesConfigurationCacheAcrossRuns() throws IOException {
+        Path upstreamRepo = projectDir.resolve("upstream-repo");
+        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);
+
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'consumer'
+                include 'persistence-neo4j'
+                """);
+
+        writeFile(projectDir.resolve("build.gradle"), "// root build\n");
+        writeFile(projectDir.resolve("persistence-neo4j/build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+
+                repositories {
+                    maven {
+                        url = uri('../upstream-repo')
+                    }
+                }
+
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                }
+                """);
+        writeFile(projectDir.resolve("persistence-neo4j/src/main/java/example/App.java"), """
+                package example;
+                public class App {
+                    public static String value() {
+                        return "ok";
+                    }
+                }
+                """);
+
+        BuildResult first = runResolve(
+                ":persistence-neo4j:resolveAgentDocs",
+                "--parallel",
+                "--configuration-cache");
+        BuildResult second = runResolve(
+                ":persistence-neo4j:resolveAgentDocs",
+                "--parallel",
+                "--configuration-cache");
+
+        assertNotNull(first.task(":persistence-neo4j:resolveAgentDocs"));
+        assertNotNull(second.task(":persistence-neo4j:resolveAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, first.task(":persistence-neo4j:resolveAgentDocs").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, second.task(":persistence-neo4j:resolveAgentDocs").getOutcome());
+        assertTrue(first.getOutput().contains("Configuration cache entry"));
+        assertTrue(second.getOutput().contains("Configuration cache entry"));
+        assertTrue(!first.getOutput().contains("was attempted without an exclusive lock"));
+        assertTrue(!second.getOutput().contains("was attempted without an exclusive lock"));
+        assertTrue(first.getOutput().contains("found 1 sidecars, materialized 1 skills"));
+        assertTrue(second.getOutput().contains("found 1 sidecars, materialized 1 skills"));
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/agent-docs.zip")));
     }
 
     private BuildResult runResolve() {

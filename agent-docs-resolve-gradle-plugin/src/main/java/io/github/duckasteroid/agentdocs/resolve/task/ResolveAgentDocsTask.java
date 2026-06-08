@@ -3,22 +3,20 @@ package io.github.duckasteroid.agentdocs.resolve.task;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.SkillEntry;
 import org.gradle.api.DefaultTask;
-import org.gradle.api.artifacts.ConfigurationContainer;
-import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.work.DisableCachingByDefault;
-
-import javax.inject.Inject;
 
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
@@ -29,12 +27,6 @@ import javax.inject.Inject;
  */
 @DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
-    @Inject
-    protected abstract ConfigurationContainer getConfigurations();
-
-    @Inject
-    protected abstract DependencyHandler getDependencies();
-
     /**
      * Gradle configuration name to inspect for direct dependencies.
      *
@@ -51,6 +43,15 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
      */
     @Input
     public abstract ListProperty<String> getDependencyCoordinates();
+
+    /**
+     * Sidecar archive paths resolved during task configuration and keyed by
+     * {@code group:name:version} coordinates.
+     *
+     * @return coordinate-to-sidecar-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getResolvedSidecarPaths();
 
     /**
      * Root output directory for extracted docs and generated skills.
@@ -87,20 +88,21 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
                 skillsRoot);
 
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
-        SidecarArtifactResolver sidecarResolver =
-                new SidecarArtifactResolver(getConfigurations(), getDependencies(), getLogger());
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
         SkillWriter skillWriter = new SkillWriter(getClass().getClassLoader());
 
         int sidecarsResolved = 0;
         int skillsMaterialized = 0;
+        Map<String, String> resolvedSidecars = getResolvedSidecarPaths().get();
 
         for (ModuleCoordinate coordinate : candidates) {
             getLogger().debug("Checking agent-docs sidecar for {}", coordinate.gav());
-            Path sidecarPath = sidecarResolver.resolveSidecar(coordinate);
-            if (sidecarPath == null) {
+            String sidecarPathValue = resolvedSidecars.get(coordinate.gav());
+            if (sidecarPathValue == null || sidecarPathValue.isBlank()) {
+                getLogger().info("No agent-docs sidecar found for {}", coordinate.gav());
                 continue;
             }
+            Path sidecarPath = Path.of(sidecarPathValue);
             sidecarsResolved++;
 
             SkillEntry entry = skillDirectoryManager.materializeSkill(coordinate, sidecarPath, skillsRoot);
