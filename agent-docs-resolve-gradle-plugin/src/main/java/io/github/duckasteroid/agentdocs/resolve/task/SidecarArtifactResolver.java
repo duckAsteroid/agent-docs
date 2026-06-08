@@ -4,8 +4,10 @@ import java.nio.file.Path;
 import java.util.Set;
 
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
+import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
+import org.gradle.api.artifacts.result.UnresolvedDependencyResult;
 import org.gradle.api.logging.Logger;
 
 /**
@@ -44,10 +46,9 @@ final class SidecarArtifactResolver {
 
         Set<java.io.File> files;
         try {
-            var lenientConfiguration = detached.getResolvedConfiguration().getLenientConfiguration();
-            files = lenientConfiguration.getFiles();
+            files = detached.getIncoming().artifactView(view -> view.lenient(true)).getFiles().getFiles();
 
-            var unresolvedDependencies = lenientConfiguration.getUnresolvedModuleDependencies();
+            var unresolvedDependencies = collectUnresolvedDependencies(detached);
             if (!unresolvedDependencies.isEmpty()) {
                 logger.info(
                         "agent-docs sidecar resolution for {} reported {} unresolved module(s)",
@@ -57,7 +58,7 @@ final class SidecarArtifactResolver {
                         logger.debug(
                                 "Unresolved sidecar module during {} resolution: {}",
                                 coordinate.gav(),
-                                unresolved.getSelector()));
+                                unresolved.getRequested()));
             }
         } catch (Exception exception) {
             logger.info("Unable to resolve agent-docs sidecar for {}", coordinate.gav(), exception);
@@ -77,5 +78,15 @@ final class SidecarArtifactResolver {
         logger.info("Resolved agent-docs sidecar for {} at {}", coordinate.gav(), resolvedSidecar);
 
         return resolvedSidecar;
+    }
+
+    private static Set<UnresolvedDependencyResult> collectUnresolvedDependencies(Configuration configuration) {
+        Set<UnresolvedDependencyResult> unresolved = new java.util.LinkedHashSet<>();
+        configuration.getIncoming().getResolutionResult().getAllDependencies().forEach(dependency -> {
+            if (dependency instanceof UnresolvedDependencyResult unresolvedDependency) {
+                unresolved.add(unresolvedDependency);
+            }
+        });
+        return unresolved;
     }
 }
