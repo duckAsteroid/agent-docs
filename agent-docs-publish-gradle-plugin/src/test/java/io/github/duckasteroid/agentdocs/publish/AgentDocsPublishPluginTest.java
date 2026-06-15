@@ -303,6 +303,62 @@ class AgentDocsPublishPluginTest {
     }
 
     @Test
+    void installAgentDocsPublishSkillWritesToConfiguredSkillsDirectory() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                agentDocs {
+                    skillsDirectory = layout.projectDirectory.dir('my-agents/skills')
+                }
+                """);
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("installAgentDocsPublishSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":installAgentDocsPublishSkill").getOutcome());
+
+        Path configured = projectDir.resolve("my-agents/skills/agent-docs-publish/SKILL.md");
+        assertTrue(Files.exists(configured), "Expected SKILL.md at configured skillsDirectory");
+        assertTrue(Files.notExists(projectDir.resolve(".agents/skills/agent-docs-publish/SKILL.md")),
+                "Expected SKILL.md not written at default location when skillsDirectory is overridden");
+    }
+
+    @Test
+    void installAgentDocsPublishSkillRespects_configuredSkillsDirectory_inMultiProjectBuild() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'multi-root'
+                include 'lib'
+                """);
+        writeFile(projectDir.resolve("build.gradle"), "// root\n");
+        writeFile(projectDir.resolve("lib/build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                agentDocs {
+                    skillsDirectory = rootProject.layout.projectDirectory.dir('team-skills')
+                }
+                """);
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments(":lib:installAgentDocsPublishSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":lib:installAgentDocsPublishSkill").getOutcome());
+
+        assertTrue(Files.exists(projectDir.resolve("team-skills/agent-docs-publish/SKILL.md")),
+                "Expected SKILL.md written at configured skillsDirectory path");
+        assertTrue(Files.notExists(projectDir.resolve(".agents/skills/agent-docs-publish/SKILL.md")),
+                "Expected SKILL.md not written at default location when skillsDirectory is overridden");
+    }
+
+    @Test
     void packageAgentDocsFailsWhenStandardDirectoryIsAFile() throws IOException {
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
         writeFile(projectDir.resolve("build.gradle"), """

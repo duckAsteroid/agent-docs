@@ -20,4 +20,11 @@ public abstract class AgentDocsPublishExtension {
      * @return disabled validation rule IDs
      */
     public abstract SetProperty<String> getDisabledValidationRules();
+
+    /**
+     * Root directory for generated skill files.
+     *
+     * @return skills root directory property
+     */
+    public abstract DirectoryProperty getSkillsDirectory();
 }

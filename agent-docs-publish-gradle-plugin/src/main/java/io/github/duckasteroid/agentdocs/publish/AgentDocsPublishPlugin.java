@@ -41,6 +41,8 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
 
         extension.getDocsDirectory().convention(project.getLayout().getProjectDirectory().dir("src/agent-docs"));
         extension.getDisabledValidationRules().convention(Set.of());
+        extension.getSkillsDirectory().convention(
+                project.getRootProject().getLayout().getProjectDirectory().dir(".agents/skills"));
 
         Provider<Set<String>> disabledRulesFromProperties = project.getProviders()
                 .gradleProperty("agentDocs.disabledValidationRules")
@@ -89,8 +91,7 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             task.setDescription("Installs the agent-docs publish plugin usage guide into the local agent skills folder.");
             task.getSkillContent().set(skillContent);
             task.getOutputFile().convention(
-                    project.getRootProject().getLayout().getProjectDirectory()
-                            .file(".agents/skills/agent-docs-publish/SKILL.md"));
+                    extension.getSkillsDirectory().file("agent-docs-publish/SKILL.md"));
         });
     }
 
