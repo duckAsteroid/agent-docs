@@ -2,6 +2,8 @@ package io.github.duckasteroid.agentdocs.publish;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -80,6 +82,27 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
                 .configureEach(publication -> publication.artifact(packageAgentDocs)));
 
         project.getTasks().matching(task -> task.getName().equals("assemble")).configureEach(task -> task.dependsOn(packageAgentDocs));
+
+        String skillContent = loadSkillResource();
+        project.getTasks().register("installAgentDocsPublishSkill", InstallAgentDocsSkillTask.class, task -> {
+            task.setGroup("agent docs");
+            task.setDescription("Installs the agent-docs publish plugin usage guide into the local agent skills folder.");
+            task.getSkillContent().set(skillContent);
+            task.getOutputFile().convention(
+                    project.getRootProject().getLayout().getProjectDirectory()
+                            .file(".agents/skills/agent-docs-publish/SKILL.md"));
+        });
+    }
+
+    private static String loadSkillResource() {
+        try (InputStream is = AgentDocsPublishPlugin.class.getResourceAsStream("SKILL.md")) {
+            if (is == null) {
+                throw new IllegalStateException("Bundled SKILL.md resource not found in plugin jar");
+            }
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read bundled SKILL.md resource", e);
+        }
     }
 
     private static void writePackagedSkillEntrypoint(Zip task, File docsDirectory) {

@@ -245,6 +245,115 @@ class ResolveAgentDocsTaskTest {
     }
 
     @Test
+    void installAgentDocsResolveSkillWritesSkillFileToDefaultLocation() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+                """);
+
+        BuildResult result = GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("installAgentDocsResolveSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":installAgentDocsResolveSkill").getOutcome());
+
+        Path skillFile = projectDir.resolve(".agents/skills/agent-docs-resolve/SKILL.md");
+        assertTrue(Files.exists(skillFile), "Expected SKILL.md to be written at default location");
+        String content = Files.readString(skillFile);
+        assertTrue(content.contains("name: agent-docs-resolve"), "Expected skill name in frontmatter");
+        assertTrue(content.contains("io.github.duckasteroid.agent-docs"), "Expected plugin ID in content");
+    }
+
+    @Test
+    void installAgentDocsResolveSkillIsUpToDateOnSecondRun() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+                """);
+
+        GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("installAgentDocsResolveSkill")
+                .build();
+
+        BuildResult second = GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("installAgentDocsResolveSkill")
+                .build();
+
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":installAgentDocsResolveSkill").getOutcome());
+    }
+
+    @Test
+    void installAgentDocsResolveSkillRespectsConfiguredSkillsDirectory() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+
+                agentDocs {
+                    skillsDirectory = rootProject.layout.projectDirectory.dir('custom-skills')
+                }
+                """);
+
+        BuildResult result = GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments("installAgentDocsResolveSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":installAgentDocsResolveSkill").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve("custom-skills/agent-docs-resolve/SKILL.md")),
+                "Expected SKILL.md written in configured skills directory");
+        assertTrue(Files.notExists(projectDir.resolve(".agents/skills/agent-docs-resolve/SKILL.md")),
+                "Expected default location to be unused when skills directory is customized");
+    }
+
+    @Test
+    void installAgentDocsResolveSkillWritesToRootProjectInMultiProjectBuild() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'multi-root'
+                include 'app'
+                """);
+        writeFile(projectDir.resolve("build.gradle"), "// root\n");
+        writeFile(projectDir.resolve("app/build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+                """);
+
+        BuildResult result = GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withPluginClasspath()
+                .withArguments(":app:installAgentDocsResolveSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":app:installAgentDocsResolveSkill").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/agent-docs-resolve/SKILL.md")),
+                "Expected SKILL.md written in root project, not subproject");
+        assertTrue(Files.notExists(projectDir.resolve("app/.agents/skills/agent-docs-resolve/SKILL.md")),
+                "Expected SKILL.md not written in subproject directory");
+    }
+
+    @Test
     void resolveAgentDocsFromSubprojectReusesConfigurationCacheAcrossRuns() throws IOException {
         Path upstreamRepo = projectDir.resolve("upstream-repo");
         writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true);

@@ -1,9 +1,13 @@
 package io.github.duckasteroid.agentdocs.resolve;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import io.github.duckasteroid.agentdocs.resolve.task.InstallAgentDocsSkillTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -79,5 +83,25 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
             }));
             task.getSkillsDirectory().set(extension.getSkillsDirectory());
         });
+
+        String skillContent = loadSkillResource();
+        project.getTasks().register("installAgentDocsResolveSkill", InstallAgentDocsSkillTask.class, task -> {
+            task.setGroup("agent docs");
+            task.setDescription("Installs the agent-docs resolve plugin usage guide into the local agent skills folder.");
+            task.getSkillContent().set(skillContent);
+            task.getOutputFile().convention(
+                    extension.getSkillsDirectory().file("agent-docs-resolve/SKILL.md"));
+        });
+    }
+
+    private static String loadSkillResource() {
+        try (InputStream is = AgentDocsResolvePlugin.class.getResourceAsStream("SKILL.md")) {
+            if (is == null) {
+                throw new IllegalStateException("Bundled SKILL.md resource not found in plugin jar");
+            }
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read bundled SKILL.md resource", e);
+        }
     }
 }

@@ -239,6 +239,70 @@ class AgentDocsPublishPluginTest {
     }
 
     @Test
+    void installAgentDocsPublishSkillWritesSkillFileToDefaultLocation() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("installAgentDocsPublishSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":installAgentDocsPublishSkill").getOutcome());
+
+        Path skillFile = projectDir.resolve(".agents/skills/agent-docs-publish/SKILL.md");
+        assertTrue(Files.exists(skillFile), "Expected SKILL.md to be written at default location");
+        String content = Files.readString(skillFile);
+        assertTrue(content.contains("name: agent-docs-publish"), "Expected skill name in frontmatter");
+        assertTrue(content.contains("io.github.duckasteroid.agent-docs.publish"), "Expected plugin ID in content");
+    }
+
+    @Test
+    void installAgentDocsPublishSkillIsUpToDateOnSecondRun() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+
+        gradleRunner(projectDir).withArguments("installAgentDocsPublishSkill").build();
+        BuildResult second = gradleRunner(projectDir).withArguments("installAgentDocsPublishSkill").build();
+
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":installAgentDocsPublishSkill").getOutcome());
+    }
+
+    @Test
+    void installAgentDocsPublishSkillWritesToRootProjectInMultiProjectBuild() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'multi-root'
+                include 'lib'
+                """);
+        writeFile(projectDir.resolve("build.gradle"), "// root\n");
+        writeFile(projectDir.resolve("lib/build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments(":lib:installAgentDocsPublishSkill")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":lib:installAgentDocsPublishSkill").getOutcome());
+        assertTrue(Files.exists(projectDir.resolve(".agents/skills/agent-docs-publish/SKILL.md")),
+                "Expected SKILL.md written in root project, not subproject");
+        assertTrue(Files.notExists(projectDir.resolve("lib/.agents/skills/agent-docs-publish/SKILL.md")),
+                "Expected SKILL.md not written in subproject directory");
+    }
+
+    @Test
     void packageAgentDocsFailsWhenStandardDirectoryIsAFile() throws IOException {
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
         writeFile(projectDir.resolve("build.gradle"), """
