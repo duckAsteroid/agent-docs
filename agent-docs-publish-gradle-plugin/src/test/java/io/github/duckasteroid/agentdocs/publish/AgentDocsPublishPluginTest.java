@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.gradle.testkit.runner.BuildResult;
@@ -189,6 +191,121 @@ class AgentDocsPublishPluginTest {
         assertTrue(Files.exists(artifactBasePath.resolve("sample-lib-1.2.3.jar")), "Expected main jar in Maven local repo");
         assertTrue(Files.exists(artifactBasePath.resolve("sample-lib-1.2.3-agent-docs.zip")),
                 "Expected agent-docs classified zip in Maven local repo");
+    }
+
+    @Test
+    void agentDocsSidecarIsAtSameGavAsJarWhenArchivesNameDiffersFromProjectName() throws IOException {
+        Path localRepo = projectDir.resolve("local-m2");
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'maven-publish'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                group = 'io.github.example'
+                version = '1.2.3'
+                base { archivesName = 'custom-lib' }
+
+                publishing {
+                    publications {
+                        mavenJava(org.gradle.api.publish.maven.MavenPublication) {
+                            from components.java
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/io/github/example/Sample.java"), """
+                package io.github.example;
+
+                public class Sample {
+                    public String hello() {
+                        return "hello";
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs when archivesName differs from project name."));
+        writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("publishToMavenLocal", "-Dmaven.repo.local=" + localRepo)
+                .build();
+
+        assertNotNull(result.task(":publishToMavenLocal"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":publishToMavenLocal").getOutcome());
+
+        // Find the published jar — its directory IS the artifact's GAV path in the repo
+        Path groupPath = localRepo.resolve("io/github/example");
+        Optional<Path> jarPath;
+        try (Stream<Path> walker = Files.walk(groupPath, 3)) {
+            jarPath = walker
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.endsWith(".jar")
+                                && !name.contains("-sources")
+                                && !name.contains("-javadoc");
+                    })
+                    .findFirst();
+        }
+        assertTrue(jarPath.isPresent(), "Expected a jar to be published under " + groupPath);
+
+        Path artifactDir = jarPath.get().getParent();
+        boolean sidecarPresent;
+        try (Stream<Path> listing = Files.list(artifactDir)) {
+            sidecarPresent = listing.anyMatch(p -> p.getFileName().toString().endsWith("-agent-docs.zip"));
+        }
+        assertTrue(sidecarPresent,
+                "Expected agent-docs sidecar zip in the same GAV directory as the jar (" + artifactDir + ")");
+    }
+
+    @Test
+    void agentDocsSidecarIsAtSameGavAsJarWhenPublicationArtifactIdIsSetExplicitly() throws IOException {
+        Path localRepo = projectDir.resolve("local-m2");
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'maven-publish'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                group = 'io.github.example'
+                version = '1.2.3'
+
+                publishing {
+                    publications {
+                        mavenJava(org.gradle.api.publish.maven.MavenPublication) {
+                            artifactId = 'my-custom-lib'
+                            from components.java
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/io/github/example/Sample.java"), """
+                package io.github.example;
+
+                public class Sample {
+                    public String hello() {
+                        return "hello";
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Publish docs when publication artifactId is set explicitly."));
+        writeFile(projectDir.resolve("src/agent-docs/topics/overview.md"), "# Overview\n");
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("publishToMavenLocal", "-Dmaven.repo.local=" + localRepo)
+                .build();
+
+        assertNotNull(result.task(":publishToMavenLocal"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":publishToMavenLocal").getOutcome());
+
+        Path artifactBasePath = localRepo.resolve("io/github/example/my-custom-lib/1.2.3");
+        assertTrue(Files.exists(artifactBasePath.resolve("my-custom-lib-1.2.3.jar")),
+                "Expected jar at explicit artifactId GAV coordinates");
+        assertTrue(Files.exists(artifactBasePath.resolve("my-custom-lib-1.2.3-agent-docs.zip")),
+                "Expected agent-docs sidecar at the same explicit artifactId GAV coordinates");
     }
 
     @Test
