@@ -411,6 +411,89 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.exists(projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0/SKILL.md")));
     }
 
+    @Test
+    void resolveAgentDocsExtractsSourcesAndAnnotatesSkillWhenIncludeSourcesEnabled() throws IOException {
+        Path upstreamRepo = projectDir.resolve("upstream-repo");
+        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true, true);
+        writeMavenModule(upstreamRepo, "com.example", "dep-no-sources", "2.0.0", true, false);
+
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeConsumerBuildFileWithSources("""
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                    implementation 'com.example:dep-no-sources:2.0.0'
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/example/App.java"), """
+                package example;
+                public class App {}
+                """);
+
+        BuildResult result = runResolve();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
+
+        Path implRoot = projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0");
+        String implSkill = Files.readString(implRoot.resolve("SKILL.md"));
+        assertTrue(implSkill.contains("metadata:\n  sources: src/"), "Expected sources path in metadata");
+        assertTrue(Files.exists(implRoot.resolve("src/com/example/dep/impl/Main.java")),
+                "Expected sources extracted to src/ subdirectory");
+
+        Path noSourcesRoot = projectDir.resolve(".agents/skills/com-example-dep-no-sources-2-0-0");
+        String noSourcesSkill = Files.readString(noSourcesRoot.resolve("SKILL.md"));
+        assertTrue(noSourcesSkill.contains("metadata:\n  sources: none"),
+                "Expected 'none' when sources jar is absent");
+        assertTrue(Files.notExists(noSourcesRoot.resolve("src/")),
+                "Expected no src/ directory when sources unavailable");
+    }
+
+    @Test
+    void resolveAgentDocsDoesNotInjectSourcesMetadataWhenIncludeSourcesIsFalse() throws IOException {
+        Path upstreamRepo = projectDir.resolve("upstream-repo");
+        writeMavenModule(upstreamRepo, "com.example", "dep-impl", "1.0.0", true, true);
+
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'consumer'\n");
+        writeConsumerBuildFile("""
+                dependencies {
+                    implementation 'com.example:dep-impl:1.0.0'
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/example/App.java"), """
+                package example;
+                public class App {}
+                """);
+
+        BuildResult result = runResolve();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
+
+        Path implRoot = projectDir.resolve(".agents/skills/com-example-dep-impl-1-0-0");
+        String skillContent = Files.readString(implRoot.resolve("SKILL.md"));
+        assertTrue(!skillContent.contains("metadata:"), "Expected no metadata block when includeSources is false");
+        assertTrue(!skillContent.contains("sources:"), "Expected no sources field when includeSources is false");
+    }
+
+    private void writeConsumerBuildFileWithSources(String dependenciesBlock) throws IOException {
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-library'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+
+                repositories {
+                    maven {
+                        url = uri('upstream-repo')
+                    }
+                }
+
+                agentDocs {
+                    includeSources = true
+                }
+
+                %s
+                """.formatted(dependenciesBlock));
+    }
+
     private BuildResult runResolve() {
         return runResolve("resolveAgentDocs");
     }
@@ -448,6 +531,12 @@ class ResolveAgentDocsTaskTest {
 
     private static void writeMavenModule(Path repositoryRoot, String group, String artifact, String version, boolean withSidecar)
             throws IOException {
+        writeMavenModule(repositoryRoot, group, artifact, version, withSidecar, false);
+    }
+
+    private static void writeMavenModule(
+            Path repositoryRoot, String group, String artifact, String version,
+            boolean withSidecar, boolean withSources) throws IOException {
         Path baseDir = repositoryRoot
                 .resolve(group.replace('.', '/'))
                 .resolve(artifact)
@@ -466,13 +555,26 @@ class ResolveAgentDocsTaskTest {
         if (withSidecar) {
             writeAgentDocsSidecar(baseDir.resolve(artifact + "-" + version + "-agent-docs.zip"), group, artifact, version);
         }
+        if (withSources) {
+            writeSourcesJar(baseDir.resolve(artifact + "-" + version + "-sources.jar"), group, artifact);
+        }
     }
 
     private static void writeAgentDocsSidecar(Path zipPath, String group, String artifact, String version) throws IOException {
         Files.createDirectories(zipPath.getParent());
         try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(zipPath))) {
             outputStream.putNextEntry(new ZipEntry("SKILL.md"));
-            outputStream.write(("# " + group + ":" + artifact + ":" + version + "\n").getBytes());
+            outputStream.write(("---\ndescription: " + group + ":" + artifact + ":" + version + "\n---\n\n# Docs\n").getBytes());
+            outputStream.closeEntry();
+        }
+    }
+
+    private static void writeSourcesJar(Path jarPath, String group, String artifact) throws IOException {
+        Files.createDirectories(jarPath.getParent());
+        String javaPath = group.replace('.', '/') + "/" + artifact.replace('-', '/') + "/Main.java";
+        try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(jarPath))) {
+            outputStream.putNextEntry(new ZipEntry(javaPath));
+            outputStream.write(("package " + group + ";\npublic class Main {}\n").getBytes());
             outputStream.closeEntry();
         }
     }

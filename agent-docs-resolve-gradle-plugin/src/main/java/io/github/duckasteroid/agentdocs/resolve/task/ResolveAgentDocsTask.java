@@ -20,9 +20,13 @@ import org.gradle.work.DisableCachingByDefault;
 
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
-it  * extracts docs into dependency-scoped directories in the local project skills tree, marks
- * managed folders with
- * {@code .agent-docs}, and removes stale marker-owned dependency folders.
+ * extracts docs into dependency-scoped directories in the local project skills tree, marks managed
+ * folders with {@code .agent-docs}, and removes stale marker-owned dependency folders.
+ *
+ * <p>When {@link #getIncludeSources()} is {@code true}, the task also resolves the {@code sources}
+ * classifier jar for each dependency and unpacks it into a {@code src/} subdirectory of the skill
+ * folder. The extracted {@code SKILL.md} frontmatter records {@code metadata.sources: src/} when
+ * sources are available, or {@code metadata.sources: none} when the artifact has no sources jar.
  */
 @DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
@@ -51,6 +55,25 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
      */
     @Input
     public abstract MapProperty<String, String> getResolvedSidecarPaths();
+
+    /**
+     * When {@code true}, the task also resolves and extracts the {@code sources} classifier jar
+     * for each dependency that has an agent-docs sidecar.
+     *
+     * @return include-sources flag property
+     */
+    @Input
+    public abstract Property<Boolean> getIncludeSources();
+
+    /**
+     * Sources jar paths resolved during task configuration and keyed by
+     * {@code group:name:version} coordinates. Only populated when {@link #getIncludeSources()} is
+     * {@code true}; empty otherwise.
+     *
+     * @return coordinate-to-sources-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getResolvedSourcePaths();
 
     /**
      * Root output directory for extracted docs and generated skills.
@@ -89,9 +112,11 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
 
+        boolean includeSources = getIncludeSources().get();
         int sidecarsResolved = 0;
         int skillsMaterialized = 0;
         Map<String, String> resolvedSidecars = getResolvedSidecarPaths().get();
+        Map<String, String> resolvedSources = getResolvedSourcePaths().get();
 
         for (ModuleCoordinate coordinate : candidates) {
             getLogger().debug("Checking agent-docs sidecar for {}", coordinate.gav());
@@ -103,7 +128,16 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
             Path sidecarPath = Path.of(sidecarPathValue);
             sidecarsResolved++;
 
-            SkillEntry entry = skillDirectoryManager.materializeSkill(coordinate, sidecarPath, skillsRoot);
+            Path sourcesPath = null;
+            if (includeSources) {
+                String sourcesPathValue = resolvedSources.get(coordinate.gav());
+                if (sourcesPathValue != null && !sourcesPathValue.isBlank()) {
+                    sourcesPath = Path.of(sourcesPathValue);
+                }
+            }
+
+            SkillEntry entry = skillDirectoryManager.materializeSkill(
+                    coordinate, sidecarPath, skillsRoot, includeSources, sourcesPath);
             if (entry == null) {
                 continue;
             }

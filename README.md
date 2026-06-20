@@ -68,7 +68,7 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 ## Modules
 
 - `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
-- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, extracts docs under root `.agents/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, and removes stale marker-owned dependency skill folders.
+- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, extracts docs under root `.agents/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, and removes stale marker-owned dependency skill folders. Optionally fetches and unpacks the `sources` classifier jar into a `src/` subdirectory and annotates the skill with `metadata.sources` so agents can read source code without downloading anything themselves.
 
 Notes:
 

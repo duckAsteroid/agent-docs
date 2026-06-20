@@ -31,13 +31,92 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot);
+        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, false, null);
 
         assertNotNull(entry);
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
         assertTrue(Files.notExists(skillDir.resolve("agent-docs.zip")));
         assertTrue(Files.exists(skillDir.resolve(".agent-docs")));
         assertTrue(Files.readString(entry.entrypointPath()).contains("name: " + coordinate.skillName()));
+    }
+
+    @Test
+    void materializeSkillDoesNotInjectSourcesMetadataWhenIncludeSourcesIsFalse() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\ndescription: test\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        assertTrue(content.contains("name: " + coordinate.skillName()));
+        assertTrue(!content.contains("metadata:"));
+        assertTrue(!content.contains("sources:"));
+    }
+
+    @Test
+    void materializeSkillInjectsSourcesPathWhenSourcesAreExtracted() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\ndescription: test\n---\n\n# Body\n");
+        Path sourcesJar = tempDir.resolve("sources.jar");
+        writeZipWithEntries(sourcesJar, "com/example/Demo.java", "package com.example;\npublic class Demo {}\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, sourcesJar);
+
+        assertNotNull(entry);
+        Path skillDir = skillsRoot.resolve(coordinate.skillName());
+        assertTrue(Files.exists(skillDir.resolve("src/com/example/Demo.java")));
+        String content = Files.readString(entry.entrypointPath());
+        assertTrue(content.contains("metadata:\n  sources: src/"));
+    }
+
+    @Test
+    void materializeSkillInjectsSourcesNoneWhenSourcesJarUnavailable() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\ndescription: test\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        assertTrue(content.contains("metadata:\n  sources: none"));
+        assertTrue(!content.contains("src/"));
+    }
+
+    @Test
+    void materializeSkillStripsExistingMetadataBlockFromSidecar() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md",
+                "---\nname: original\ndescription: test\nmetadata:\n  author: upstream\n  version: \"1.0\"\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        // upstream metadata block stripped; only resolver-injected metadata survives
+        assertTrue(!content.contains("author: upstream"));
+        assertTrue(!content.contains("version: \"1.0\""));
+        assertTrue(content.contains("metadata:\n  sources: none"));
     }
 
     @Test
@@ -48,7 +127,7 @@ class SkillDirectoryManagerTest {
         SkillDirectoryManager manager =
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         SkillEntry entry = manager.materializeSkill(
-                new ModuleCoordinate("com.example", "noskill", "1.0.0"), sidecar, tempDir.resolve("skills"));
+                new ModuleCoordinate("com.example", "noskill", "1.0.0"), sidecar, tempDir.resolve("skills"), false, null);
 
         assertNull(entry);
     }

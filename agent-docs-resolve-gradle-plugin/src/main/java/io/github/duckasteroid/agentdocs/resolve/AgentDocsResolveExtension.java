@@ -21,4 +21,16 @@ public abstract class AgentDocsResolveExtension {
      */
     public abstract DirectoryProperty getSkillsDirectory();
 
+    /**
+     * When {@code true}, the resolver also attempts to fetch the {@code sources} classifier jar
+     * for each dependency and unpacks it into a {@code src/} subdirectory of the skill folder.
+     * The extracted {@code SKILL.md} frontmatter will include {@code metadata.sources: src/} when
+     * sources are available, or {@code metadata.sources: none} when the artifact has no sources jar.
+     *
+     * <p>Defaults to {@code false}.
+     *
+     * @return include-sources flag property
+     */
+    public abstract Property<Boolean> getIncludeSources();
+
 }

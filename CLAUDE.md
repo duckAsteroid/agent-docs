@@ -29,7 +29,7 @@ This is a Gradle multi-project build with two independently publishable plugins 
 
 - **`agent-docs-publish-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs.publish`. Validates a library's `src/agent-docs/` docs root, then packages it into a sidecar zip (`build/agent-docs/<project>-agent-docs.zip`) with classifier `agent-docs`. When `maven-publish` is present, attaches the zip to every `MavenPublication` automatically.
 
-- **`agent-docs-resolve-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs`. For each direct dependency on the configured classpath (default `compileClasspath`), attempts to resolve `<group>:<artifact>:<version>:agent-docs@zip`, extracts the sidecar into `.agents/skills/<gav-skill-name>/`, rewrites the extracted `SKILL.md` frontmatter `name` to the rewritten folder name, writes an `.agent-docs` ownership marker, and removes stale marker-owned folders when dependencies are dropped.
+- **`agent-docs-resolve-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs`. For each direct dependency on the configured classpath (default `compileClasspath`), attempts to resolve `<group>:<artifact>:<version>:agent-docs@zip`, extracts the sidecar into `.agents/skills/<gav-skill-name>/`, rewrites the extracted `SKILL.md` frontmatter `name` to the rewritten folder name, writes an `.agent-docs` ownership marker, and removes stale marker-owned folders when dependencies are dropped. When `includeSources = true`, also resolves `<group>:<artifact>:<version>:sources@jar` and unpacks it into `src/` inside the skill folder; injects `metadata.sources: src/` or `metadata.sources: none` into the `SKILL.md` frontmatter accordingly.
 
 - **`agent-docs-integration-tests`** — End-to-end TestKit tests that run both plugins together.
 
@@ -40,6 +40,8 @@ This is a Gradle multi-project build with two independently publishable plugins 
 **Skill naming**: GAV coordinates are normalized to `[a-z0-9-]`, no edge or consecutive hyphens, max 64 chars. Names longer than 64 chars are truncated with a deterministic SHA-256 hash suffix. This logic lives in `ModuleCoordinate.skillName()`.
 
 **`name` frontmatter handling**: The publisher strips `name:` from packaged `SKILL.md` because resolver-generated GAV naming is authoritative. The resolver then writes the canonical `name:` on extraction. Do not preserve publisher `name` through the sidecar.
+
+**`metadata` frontmatter handling**: The resolver strips any existing `metadata:` block from the sidecar before rewriting, then injects its own `metadata.sources` field when `includeSources` is enabled. Upstream `metadata` in sidecars is intentionally discarded to keep resolver-generated values authoritative. The three possible values for `metadata.sources` are `src/` (sources extracted), `none` (sources unavailable), or the field is absent (feature not enabled).
 
 **Ownership markers**: The resolver writes `.agent-docs` into each managed skill directory. Stale cleanup only removes directories that carry this marker, never user-created folders.
 
@@ -52,6 +54,7 @@ This is a Gradle multi-project build with two independently publishable plugins 
 | publish | `docsDirectory` | `src/agent-docs` |
 | resolve | `configurationName` | `compileClasspath` |
 | resolve | `skillsDirectory` | `<rootProject>/.agents/skills` |
+| resolve | `includeSources` | `false` |
 
 ### Versioning
 
