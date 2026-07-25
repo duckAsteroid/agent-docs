@@ -19,14 +19,21 @@ import org.gradle.api.tasks.TaskAction;
 import org.gradle.work.DisableCachingByDefault;
 
 /**
- * Resolves dependency-scoped {@code agent-docs} sidecar archives for the configured classpath,
- * extracts docs into dependency-scoped directories in the local project skills tree, marks managed
- * folders with {@code .agent-docs}, and removes stale marker-owned dependency folders.
+ * Resolves {@code Agent-Docs} manifest declarations (per {@code specification/java-conventions.md})
+ * for direct dependencies on the configured classpath, extracts docs into dependency-scoped
+ * directories in the local project skills tree, marks managed folders with {@code .agent-docs},
+ * and removes stale marker-owned dependency folders.
+ *
+ * <p>Only dependencies whose resolved jar carries an {@code Agent-Docs} manifest attribute are
+ * considered — dependencies without it are skipped with no further resolution attempt of any
+ * kind. A {@code classpath} declaration is extracted directly from the dependency's own jar; a
+ * {@code maven} declaration is resolved as a separate {@code agent-docs} sidecar zip.
  *
  * <p>When {@link #getIncludeSources()} is {@code true}, the task also resolves the {@code sources}
- * classifier jar for each dependency and unpacks it into a {@code src/} subdirectory of the skill
- * folder. The extracted {@code SKILL.md} frontmatter records {@code metadata.sources: src/} when
- * sources are available, or {@code metadata.sources: none} when the artifact has no sources jar.
+ * classifier jar for each declared dependency and unpacks it into a {@code src/} subdirectory of
+ * the skill folder. The extracted {@code SKILL.md} frontmatter records {@code metadata.sources:
+ * src/} when sources are available, or {@code metadata.sources: none} when the artifact has no
+ * sources jar.
  */
 @DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
@@ -39,17 +46,44 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     public abstract Property<String> getConfigurationName();
 
     /**
-     * Direct dependency coordinates from the configured classpath in {@code group:name:version}
-     * form, precomputed during task configuration.
+     * Coordinates, in {@code group:name:version} form, of direct dependencies whose resolved jar
+     * carries an {@code Agent-Docs} manifest attribute — precomputed during task configuration.
+     * Dependencies without the attribute are not included here at all.
      *
-     * @return direct dependency coordinates
+     * @return declared dependency coordinates
      */
     @Input
     public abstract ListProperty<String> getDependencyCoordinates();
 
     /**
-     * Sidecar archive paths resolved during task configuration and keyed by
-     * {@code group:name:version} coordinates.
+     * {@code Agent-Docs} scheme (either {@code classpath} or {@code maven}) keyed by coordinate.
+     *
+     * @return coordinate-to-scheme mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getSchemes();
+
+    /**
+     * For {@code classpath}-scheme coordinates, the absolute path of the dependency's own resolved
+     * jar to extract from.
+     *
+     * @return coordinate-to-jar-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getClasspathJarPaths();
+
+    /**
+     * For {@code classpath}-scheme coordinates, the path within the jar (from {@link
+     * #getClasspathJarPaths()}) to the root of the docs bundle.
+     *
+     * @return coordinate-to-embedded-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getClasspathPrefixes();
+
+    /**
+     * For {@code maven}-scheme coordinates, the sidecar archive path resolved during task
+     * configuration. Absent when the sidecar didn't resolve.
      *
      * @return coordinate-to-sidecar-path mapping
      */
@@ -58,7 +92,7 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
 
     /**
      * When {@code true}, the task also resolves and extracts the {@code sources} classifier jar
-     * for each dependency that has an agent-docs sidecar.
+     * for each dependency with an agent-docs declaration.
      *
      * @return include-sources flag property
      */
@@ -84,7 +118,7 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     public abstract DirectoryProperty getSkillsDirectory();
 
     /**
-     * Resolves dependency sidecars, extracts docs into managed skill directories, prunes stale
+     * Extracts docs for each declared dependency into managed skill directories, prunes stale
      * managed folders.
      *
      * @throws IOException when filesystem operations fail
@@ -103,7 +137,7 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
             candidates.add(new ModuleCoordinate(segments[0], segments[1], segments[2]));
         }
         getLogger().info(
-                "Resolving agent-docs sidecars from {} coordinates ({} valid, {} invalid) into {}",
+                "Resolving agent-docs from {} declared coordinates ({} valid, {} invalid) into {}",
                 getDependencyCoordinates().get().size(),
                 candidates.size(),
                 invalidCoordinates,
@@ -113,20 +147,18 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         SkillDirectoryManager skillDirectoryManager = new SkillDirectoryManager(getLogger());
 
         boolean includeSources = getIncludeSources().get();
-        int sidecarsResolved = 0;
         int skillsMaterialized = 0;
+        Map<String, String> schemes = getSchemes().get();
+        Map<String, String> classpathJarPaths = getClasspathJarPaths().get();
+        Map<String, String> classpathPrefixes = getClasspathPrefixes().get();
         Map<String, String> resolvedSidecars = getResolvedSidecarPaths().get();
         Map<String, String> resolvedSources = getResolvedSourcePaths().get();
+        Map<ModuleCoordinate, String> skillNames = SkillNameAssigner.assign(candidates);
 
         for (ModuleCoordinate coordinate : candidates) {
-            getLogger().debug("Checking agent-docs sidecar for {}", coordinate.gav());
-            String sidecarPathValue = resolvedSidecars.get(coordinate.gav());
-            if (sidecarPathValue == null || sidecarPathValue.isBlank()) {
-                getLogger().info("No agent-docs sidecar found for {}", coordinate.gav());
-                continue;
-            }
-            Path sidecarPath = Path.of(sidecarPathValue);
-            sidecarsResolved++;
+            String scheme = schemes.get(coordinate.gav());
+            String skillName = skillNames.get(coordinate);
+            getLogger().debug("Materializing agent-docs for {} ({}) as {}", coordinate.gav(), scheme, skillName);
 
             Path sourcesPath = null;
             if (includeSources) {
@@ -136,8 +168,28 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
                 }
             }
 
-            SkillEntry entry = skillDirectoryManager.materializeSkill(
-                    coordinate, sidecarPath, skillsRoot, includeSources, sourcesPath);
+            SkillEntry entry;
+            if (AgentDocsDeclaration.SCHEME_CLASSPATH.equals(scheme)) {
+                String jarPathValue = classpathJarPaths.get(coordinate.gav());
+                String prefix = classpathPrefixes.get(coordinate.gav());
+                if (jarPathValue == null) {
+                    continue;
+                }
+                entry = skillDirectoryManager.materializeSkillFromEmbeddedArchive(
+                        coordinate, skillName, Path.of(jarPathValue), prefix, skillsRoot, includeSources, sourcesPath);
+            } else if (AgentDocsDeclaration.SCHEME_MAVEN.equals(scheme)) {
+                String sidecarPathValue = resolvedSidecars.get(coordinate.gav());
+                if (sidecarPathValue == null || sidecarPathValue.isBlank()) {
+                    getLogger().info("No agent-docs sidecar found for {}", coordinate.gav());
+                    continue;
+                }
+                entry = skillDirectoryManager.materializeSkill(
+                        coordinate, skillName, Path.of(sidecarPathValue), skillsRoot, includeSources, sourcesPath);
+            } else {
+                getLogger().warn("Unknown agent-docs scheme '{}' for {}; skipping", scheme, coordinate.gav());
+                continue;
+            }
+
             if (entry == null) {
                 continue;
             }
@@ -147,9 +199,8 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
 
         skillDirectoryManager.cleanupStaleManagedSkillDirectories(skillEntries, skillsRoot);
         getLogger().lifecycle(
-                "resolveAgentDocs: inspected {} dependencies, found {} sidecars, materialized {} skills",
+                "resolveAgentDocs: inspected {} dependencies, materialized {} skills",
                 candidates.size(),
-                sidecarsResolved,
                 skillsMaterialized);
     }
 }

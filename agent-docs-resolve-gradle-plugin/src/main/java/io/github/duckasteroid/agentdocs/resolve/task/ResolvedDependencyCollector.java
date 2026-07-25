@@ -1,36 +1,39 @@
 package io.github.duckasteroid.agentdocs.resolve.task;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 
 /**
  * Collects resolved direct dependencies from the configured classpath.
  */
-final class ResolvedDependencyCollector {
+public final class ResolvedDependencyCollector {
     private ResolvedDependencyCollector() {
     }
 
     /**
-     * Resolves first-level dependencies and returns valid Maven coordinates.
+     * Resolves first-level dependencies and correlates each with its component identifier, so
+     * resolved artifact files can be filtered down to direct dependencies only.
      *
      * @param configuration configuration to inspect
-     * @return ordered set of direct dependency coordinates
+     * @return direct dependency component identifiers mapped to their Maven coordinates
      */
-    static Set<ModuleCoordinate> collect(Configuration configuration) {
-        Set<ModuleCoordinate> candidates = new LinkedHashSet<>();
+    public static Map<ComponentIdentifier, ModuleCoordinate> collectDirectDependencyCoordinates(Configuration configuration) {
+        Map<ComponentIdentifier, ModuleCoordinate> candidates = new LinkedHashMap<>();
         ResolvedComponentResult root = configuration.getIncoming().getResolutionResult().getRootComponent().get();
 
         root.getDependencies().forEach(dependency -> {
             if (!(dependency instanceof ResolvedDependencyResult resolvedDependency)) {
                 return;
             }
-            ModuleVersionIdentifier moduleVersion = resolvedDependency.getSelected().getModuleVersion();
+            ResolvedComponentResult selected = resolvedDependency.getSelected();
+            ModuleVersionIdentifier moduleVersion = selected.getModuleVersion();
             if (moduleVersion == null) {
                 return;
             }
@@ -42,7 +45,7 @@ final class ResolvedDependencyCollector {
                 return;
             }
 
-            candidates.add(new ModuleCoordinate(group, artifact, version));
+            candidates.put(selected.getId(), new ModuleCoordinate(group, artifact, version));
         });
         return candidates;
     }

@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -492,6 +493,70 @@ class AgentDocsPublishPluginTest {
                 .buildAndFail();
 
         assertTrue(result.getOutput().contains("standard directory 'references' must be a directory"));
+    }
+
+    @Test
+    void jarManifestDeclaresMavenSidecarByDefault() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.2.3'
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Sidecar distribution."));
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("jar")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":jar").getOutcome());
+
+        Path jarPath = projectDir.resolve("build/libs/sample-lib-1.2.3.jar");
+        assertTrue(Files.exists(jarPath), "Expected main jar to be built");
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            String agentDocs = jarFile.getManifest().getMainAttributes().getValue("Agent-Docs");
+            assertEquals("maven:com.example:sample-lib:1.2.3", agentDocs);
+        }
+    }
+
+    @Test
+    void embeddedDistributionStampsClasspathManifestAndSkipsSidecar() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.2.3'
+
+                agentDocs {
+                  distribution = 'EMBEDDED'
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Embedded distribution."));
+        writeFile(projectDir.resolve("src/agent-docs/references/overview.md"), "# Overview\n");
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("jar", "packageAgentDocs")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":jar").getOutcome());
+        assertEquals(TaskOutcome.SKIPPED, result.task(":packageAgentDocs").getOutcome());
+
+        Path jarPath = projectDir.resolve("build/libs/sample-lib-1.2.3.jar");
+        assertTrue(Files.exists(jarPath), "Expected main jar to be built");
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            assertEquals("classpath", jarFile.getManifest().getMainAttributes().getValue("Agent-Docs"));
+            assertNotNull(jarFile.getEntry("agent-docs/SKILL.md"), "Expected embedded SKILL.md inside jar");
+            assertNotNull(jarFile.getEntry("agent-docs/references/overview.md"), "Expected embedded reference doc inside jar");
+        }
+
+        assertTrue(Files.notExists(projectDir.resolve("build/agent-docs/sample-lib-agent-docs.zip")),
+                "Expected no sidecar zip in embedded mode");
     }
 
     private static void writeFile(Path filePath, String content) throws IOException {

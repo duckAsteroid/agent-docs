@@ -1,6 +1,6 @@
 # Agent Docs Publish Plugin
 
-This plugin packages agent-oriented documentation into a sidecar zip archive that can be resolved later and consumed locally by resolver-generated skills/resources.
+This plugin validates agent-oriented documentation and distributes it one of two ways: embedded directly in your project's own jar, or as a separate sidecar zip archive. Either way, it's discoverable by anything that understands the `Agent-Docs` manifest convention — see [`specification/core-conventions.md`](../specification/core-conventions.md) and [`specification/java-conventions.md`](../specification/java-conventions.md) at the repo root for the full, tool-agnostic convention this plugin implements.
 
 The plugin contract is intentionally minimal:
 
@@ -12,18 +12,21 @@ The plugin contract is intentionally minimal:
 
 ## What it does
 
-- Adds a `packageAgentDocs` task.
+- Adds `validateAgentDocs`, `packageAgentDocs`, and `prepareEmbeddedAgentDocs` tasks.
 - Wires `assemble` to depend on `packageAgentDocs`.
 - Fails the build if the docs directory does not exist.
 - Fails the build if `SKILL.md` is missing in docs root (case-insensitive check).
 - Fails the build if `SKILL.md` frontmatter is missing or invalid.
 - Fails the build if `scripts`, `references`, or `assets` exist as files instead of directories.
 - Emits a warning when `name` is present and omits that field from the packaged `SKILL.md`.
-- Produces an archive at:
-  - `build/agent-docs/<project-name>-agent-docs.zip`
-- Packages the full docs root directory contents at the zip root.
-- If `maven-publish` is applied, automatically attaches the archive as an additional artifact
-  with classifier `agent-docs` to all `MavenPublication`s.
+- Stamps the project's `jar` task manifest with the `Agent-Docs` attribute (see below).
+
+### Distribution modes
+
+Controlled by `agentDocs.distribution` (default `SIDECAR`):
+
+- **`SIDECAR`** (default) — packages docs into `build/agent-docs/<project-name>-agent-docs.zip` (full docs root contents at the zip root); if `maven-publish` is applied, attaches it to every `MavenPublication` with classifier `agent-docs`; stamps the main jar's manifest with `Agent-Docs: maven:<group>:<artifact>:<version>`.
+- **`EMBEDDED`** — copies docs into the project's own jar under `agent-docs/`, with no separate artifact published; stamps the main jar's manifest with `Agent-Docs: classpath`.
 
 ## Quick start
 
@@ -61,6 +64,56 @@ Or run a normal assemble build (which will include docs packaging):
 ```bash
 ./gradlew assemble
 ```
+
+## Worked example
+
+Say you publish `com.acme:weather-core:1.4.0` and want to ship agent docs with it,
+using the default `SIDECAR` distribution.
+
+1. Apply the publish plugin alongside `maven-publish`:
+
+   ```groovy
+   plugins {
+     id 'java-library'
+     id 'maven-publish'
+     id 'io.github.duckasteroid.agent-docs.publish'
+   }
+   ```
+
+2. Add docs under `src/agent-docs/`, with required frontmatter and no `name:` field:
+
+   ```markdown
+   ---
+   description: Weather forecasting client for the Acme weather API.
+   ---
+   ```
+
+   ```text
+   src/agent-docs/
+     SKILL.md
+     references/
+       overview.md
+       troubleshooting.md
+     assets/
+     scripts/
+   ```
+
+3. Build and publish:
+
+   ```bash
+   ./gradlew publish
+   ```
+
+   This produces `build/agent-docs/weather-core-agent-docs.zip`, attached to every
+   `MavenPublication` with classifier `agent-docs`, and stamps the main jar's manifest
+   with `Agent-Docs: maven:com.acme:weather-core:1.4.0`.
+
+4. Consumers using `agent-docs-resolve-gradle-plugin` read that manifest attribute off
+   their own resolved `com.acme:weather-core:1.4.0` jar and, because it says `maven:...`,
+   resolve `com.acme:weather-core:1.4.0:agent-docs@zip` automatically — no special
+   configuration needed on the consumer side. See
+   [`agent-docs-resolve-gradle-plugin/README.md`](../agent-docs-resolve-gradle-plugin/README.md)
+   for the full consumer-side mechanics.
 
 ## Default directory layout (recommended)
 

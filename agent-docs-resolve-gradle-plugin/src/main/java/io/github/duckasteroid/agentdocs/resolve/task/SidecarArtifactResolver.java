@@ -14,7 +14,7 @@ import org.gradle.api.logging.Logger;
 /**
  * Resolves dependency-scoped {@code agent-docs} sidecar archives.
  */
-final class SidecarArtifactResolver {
+public final class SidecarArtifactResolver {
     private final ConfigurationContainer configurations;
     private final DependencyHandler dependencies;
     private final Logger logger;
@@ -26,7 +26,7 @@ final class SidecarArtifactResolver {
      * @param dependencies dependency factory
      * @param logger logger for diagnostic output
      */
-    SidecarArtifactResolver(ConfigurationContainer configurations, DependencyHandler dependencies, Logger logger) {
+    public SidecarArtifactResolver(ConfigurationContainer configurations, DependencyHandler dependencies, Logger logger) {
         this.configurations = configurations;
         this.dependencies = dependencies;
         this.logger = logger;
@@ -38,7 +38,7 @@ final class SidecarArtifactResolver {
      * @param coordinate dependency coordinate
      * @return resolved sidecar path, or {@code null} when unavailable
      */
-    Path resolveSidecar(ModuleCoordinate coordinate) {
+    public Path resolveSidecar(ModuleCoordinate coordinate) {
         String sidecarNotation = coordinate.gav() + ":agent-docs@zip";
         logger.info("Attempting to resolve agent-docs sidecar {}", sidecarNotation);
         var detached = configurations.detachedConfiguration(

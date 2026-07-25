@@ -27,21 +27,27 @@ Tests use Gradle TestKit and run against the configured Gradle version via the `
 
 This is a Gradle multi-project build with two independently publishable plugins and one integration test module:
 
-- **`agent-docs-publish-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs.publish`. Validates a library's `src/agent-docs/` docs root, then packages it into a sidecar zip (`build/agent-docs/<project>-agent-docs.zip`) with classifier `agent-docs`. When `maven-publish` is present, attaches the zip to every `MavenPublication` automatically.
+- **`agent-docs-publish-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs.publish`. Validates a library's `src/agent-docs/` docs root, then distributes it per `agentDocs.distribution`: `SIDECAR` (default) packages it into a zip (`build/agent-docs/<project>-agent-docs.zip`) with classifier `agent-docs`, attached to every `MavenPublication` when `maven-publish` is present, and stamps the main `jar` task's manifest with `Agent-Docs: maven:<group>:<artifact>:<version>`; `EMBEDDED` instead copies the docs into the project's own jar under `agent-docs/` (no separate artifact) and stamps the manifest with `Agent-Docs: classpath`.
 
-- **`agent-docs-resolve-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs`. For each direct dependency on the configured classpath (default `compileClasspath`), attempts to resolve `<group>:<artifact>:<version>:agent-docs@zip`, extracts the sidecar into `.agents/skills/<gav-skill-name>/`, rewrites the extracted `SKILL.md` frontmatter `name` to the rewritten folder name, writes an `.agent-docs` ownership marker, and removes stale marker-owned folders when dependencies are dropped. When `includeSources = true`, also resolves `<group>:<artifact>:<version>:sources@jar` and unpacks it into `src/` inside the skill folder; injects `metadata.sources: src/` or `metadata.sources: none` into the `SKILL.md` frontmatter accordingly.
+- **`agent-docs-resolve-gradle-plugin`** — Plugin ID `io.github.duckasteroid.agent-docs`. For each direct dependency on the configured classpath (default `compileClasspath`), reads the `Agent-Docs` manifest attribute from that dependency's own resolved jar. A dependency with no attribute is skipped entirely — no further resolution attempt of any kind. `Agent-Docs: classpath[:path]` extracts the docs bundle directly from that same jar; `Agent-Docs: maven[:group:artifact:version]` resolves a separate `agent-docs@zip` sidecar. Either way, the bundle is extracted into `.agents/skills/<skill-name>/` (see "Skill naming" below for how `<skill-name>` is chosen), the extracted `SKILL.md` frontmatter `name` is rewritten to the folder name, an `.agent-docs` ownership marker is written, and stale marker-owned folders are removed when dependencies are dropped. When `includeSources = true`, also resolves `<group>:<artifact>:<version>:sources@jar` and unpacks it into `src/` inside the skill folder; injects `metadata.sources: src/` or `metadata.sources: none` into the `SKILL.md` frontmatter accordingly. **Does not yet discover docs for Gradle plugins applied via `plugins {}`** — only regular dependencies; that's a deferred extension of the same convention.
 
 - **`agent-docs-integration-tests`** — End-to-end TestKit tests that run both plugins together.
 
+### The `Agent-Docs` convention
+
+The authoritative, tool-agnostic specification lives in [`specification/core-conventions.md`](./specification/core-conventions.md) (language-agnostic) and [`specification/java-conventions.md`](./specification/java-conventions.md) (the JAR/manifest specifics) — **read those before changing publish/resolve manifest behavior**. In short: a single `Agent-Docs` manifest attribute (`classpath[:path]` or `maven[:group:artifact:version]`) gates all discovery; it requires neither of these plugins to produce or consume — they're validation/automation on top of a plain manifest convention.
+
 ### Key design invariants
 
-**Publish/resolve decoupling**: Publisher produces sidecars; resolver handles consumer-side extraction and skill generation. These concerns must remain independent.
+**Publish/resolve decoupling**: Publisher produces sidecars/embeds docs; resolver handles consumer-side manifest-gated discovery and skill generation. These concerns must remain independent.
 
-**Skill naming**: GAV coordinates are normalized to `[a-z0-9-]`, no edge or consecutive hyphens, max 64 chars. Names longer than 64 chars are truncated with a deterministic SHA-256 hash suffix. This logic lives in `ModuleCoordinate.skillName()`.
+**Manifest-gated discovery, not speculative resolution**: The resolver reads the `Agent-Docs` attribute off each direct dependency's already-resolved jar before doing anything else. A dependency without the attribute triggers zero further resolution attempts — no speculative `:agent-docs@zip` lookups the way earlier versions of this resolver made for every dependency.
 
-**`name` frontmatter handling**: The publisher strips `name:` from packaged `SKILL.md` because resolver-generated GAV naming is authoritative. The resolver then writes the canonical `name:` on extraction. Do not preserve publisher `name` through the sidecar.
+**Skill naming**: assigned per run in tiers, shortest-safe-first — artifact name alone, then `group-artifact` if that collides with another dependency in the same run, then the full GAV (`ModuleCoordinate.skillName()`) if `group-artifact` also collides. Each tier is normalized to `[a-z0-9-]`, no edge or consecutive hyphens, max 64 chars with a deterministic SHA-256 hash suffix when truncated. Collision detection across the full candidate set lives in `SkillNameAssigner`; per-tier candidate keys live on `ModuleCoordinate`. See `agent-docs-resolve-gradle-plugin/README.md`'s "Skill naming" section for the full algorithm.
 
-**`metadata` frontmatter handling**: The resolver strips any existing `metadata:` block from the sidecar before rewriting, then injects its own `metadata.sources` field when `includeSources` is enabled. Upstream `metadata` in sidecars is intentionally discarded to keep resolver-generated values authoritative. The three possible values for `metadata.sources` are `src/` (sources extracted), `none` (sources unavailable), or the field is absent (feature not enabled).
+**`name` frontmatter handling**: The publisher strips `name:` from packaged/embedded `SKILL.md` because resolver-generated GAV naming is authoritative. The resolver then writes the canonical `name:` on extraction. Do not preserve publisher `name` through the sidecar or embedded copy.
+
+**`metadata` frontmatter handling**: The resolver strips any existing `metadata:` block before rewriting, then injects its own `metadata.sources` field when `includeSources` is enabled. Upstream `metadata` is intentionally discarded to keep resolver-generated values authoritative. The three possible values for `metadata.sources` are `src/` (sources extracted), `none` (sources unavailable), or the field is absent (feature not enabled).
 
 **Ownership markers**: The resolver writes `.agent-docs` into each managed skill directory. Stale cleanup only removes directories that carry this marker, never user-created folders.
 
@@ -52,6 +58,7 @@ This is a Gradle multi-project build with two independently publishable plugins 
 | Plugin | Property | Default |
 |---|---|---|
 | publish | `docsDirectory` | `src/agent-docs` |
+| publish | `distribution` | `SIDECAR` |
 | resolve | `configurationName` | `compileClasspath` |
 | resolve | `skillsDirectory` | `<rootProject>/.agents/skills` |
 | resolve | `includeSources` | `false` |

@@ -54,15 +54,56 @@ final class SkillDirectoryManager {
      */
     SkillEntry materializeSkill(
             ModuleCoordinate coordinate,
+            String skillName,
             Path sidecarPath,
             Path skillsRoot,
             boolean includeSources,
             Path sourcesPath) throws IOException {
-        Path destination = skillsRoot.resolve(coordinate.skillName());
+        return materialize(coordinate, skillName, skillsRoot, includeSources, sourcesPath,
+                destination -> extractZip(destination, sidecarPath));
+    }
+
+    /**
+     * Extracts a subtree embedded within a dependency's own jar (the {@code classpath}
+     * distribution) into the managed skill directory and returns the entry.
+     *
+     * @param coordinate dependency coordinate
+     * @param archivePath the dependency's own resolved jar
+     * @param embeddedPathPrefix path, within {@code archivePath}, to the root of the docs bundle
+     * @param skillsRoot root managed skills directory
+     * @param includeSources whether to unpack sources and annotate the skill
+     * @param sourcesPath resolved sources jar, or {@code null} when unavailable
+     * @return skill entry when entrypoint is present, otherwise {@code null}
+     * @throws IOException when extraction or rewrite operations fail
+     */
+    SkillEntry materializeSkillFromEmbeddedArchive(
+            ModuleCoordinate coordinate,
+            String skillName,
+            Path archivePath,
+            String embeddedPathPrefix,
+            Path skillsRoot,
+            boolean includeSources,
+            Path sourcesPath) throws IOException {
+        return materialize(coordinate, skillName, skillsRoot, includeSources, sourcesPath,
+                destination -> extractZip(destination, archivePath, embeddedPathPrefix));
+    }
+
+    private interface ExtractionAction {
+        void extract(Path destination) throws IOException;
+    }
+
+    private SkillEntry materialize(
+            ModuleCoordinate coordinate,
+            String skillName,
+            Path skillsRoot,
+            boolean includeSources,
+            Path sourcesPath,
+            ExtractionAction extraction) throws IOException {
+        Path destination = skillsRoot.resolve(skillName);
         ResolveFilesystemSupport.deleteDirectory(destination);
         Files.createDirectories(destination);
 
-        extractZip(destination, sidecarPath);
+        extraction.extract(destination);
         ResolveFilesystemSupport.writeOwnershipMarker(destination, OWNERSHIP_MARKER_FILENAME);
 
         String sourcesMetadataValue = null;
@@ -79,12 +120,12 @@ final class SkillDirectoryManager {
 
         Path entrypoint = findEntrypoint(destination);
         if (entrypoint == null) {
-            logger.warn("Resolved sidecar for {} but could not locate SKILL.md entrypoint", coordinate.gav());
+            logger.warn("Resolved agent docs for {} but could not locate SKILL.md entrypoint", coordinate.gav());
             return null;
         }
 
-        rewriteEntrypointFrontmatter(entrypoint, coordinate.skillName(), sourcesMetadataValue);
-        return new SkillEntry(coordinate, entrypoint);
+        rewriteEntrypointFrontmatter(entrypoint, skillName, sourcesMetadataValue);
+        return new SkillEntry(coordinate, entrypoint, skillName);
     }
 
     /**
@@ -101,7 +142,7 @@ final class SkillDirectoryManager {
 
         Set<String> activeSkillFolders = new HashSet<>();
         for (SkillEntry entry : entries) {
-            activeSkillFolders.add(entry.coordinate().skillName());
+            activeSkillFolders.add(entry.skillName());
         }
 
         try (Stream<Path> children = Files.list(skillsRoot)) {
@@ -118,11 +159,38 @@ final class SkillDirectoryManager {
     }
 
     private void extractZip(Path destination, Path zipPath) throws IOException {
+        extractZip(destination, zipPath, null);
+    }
+
+    /**
+     * Extracts entries from a zip/jar archive into {@code destination}.
+     *
+     * <p>When {@code prefix} is non-null, only entries under that path are extracted, with the
+     * prefix stripped from each entry's destination path — this is how a {@code classpath}
+     * distribution's docs bundle (a subtree embedded within a dependency's own jar) is separated
+     * from the rest of that jar's contents. When {@code prefix} is {@code null}, every entry is
+     * extracted, as for a standalone {@code agent-docs} sidecar zip.
+     */
+    private void extractZip(Path destination, Path zipPath, String prefix) throws IOException {
+        String normalizedPrefix = normalizeExtractionPrefix(prefix);
         Files.createDirectories(destination);
         try (ZipInputStream zipInputStream = new ZipInputStream(Files.newInputStream(zipPath))) {
             ZipEntry entry;
             while ((entry = zipInputStream.getNextEntry()) != null) {
-                Path targetPath = destination.resolve(entry.getName()).normalize();
+                String entryName = entry.getName();
+                if (normalizedPrefix != null) {
+                    if (!entryName.startsWith(normalizedPrefix)) {
+                        zipInputStream.closeEntry();
+                        continue;
+                    }
+                    entryName = entryName.substring(normalizedPrefix.length());
+                    if (entryName.isEmpty()) {
+                        zipInputStream.closeEntry();
+                        continue;
+                    }
+                }
+
+                Path targetPath = destination.resolve(entryName).normalize();
                 if (!targetPath.startsWith(destination)) {
                     throw new IOException("Refusing to extract zip entry outside destination: " + entry.getName());
                 }
@@ -140,6 +208,17 @@ final class SkillDirectoryManager {
                 zipInputStream.closeEntry();
             }
         }
+    }
+
+    private static String normalizeExtractionPrefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) {
+            return null;
+        }
+        String normalized = prefix.startsWith("/") ? prefix.substring(1) : prefix;
+        if (!normalized.isEmpty() && !normalized.endsWith("/")) {
+            normalized = normalized + "/";
+        }
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private Path findEntrypoint(Path extractedRoot) throws IOException {

@@ -31,7 +31,7 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, false, null);
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
 
         assertNotNull(entry);
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
@@ -50,7 +50,7 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, false, null);
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
 
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
@@ -71,7 +71,7 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, sourcesJar);
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, true, sourcesJar);
 
         assertNotNull(entry);
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
@@ -90,7 +90,7 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, null);
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, true, null);
 
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
@@ -109,7 +109,7 @@ class SkillDirectoryManagerTest {
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
         ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
 
-        SkillEntry entry = manager.materializeSkill(coordinate, sidecar, skillsRoot, true, null);
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, true, null);
 
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
@@ -126,8 +126,9 @@ class SkillDirectoryManagerTest {
 
         SkillDirectoryManager manager =
                 new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate noSkillCoordinate = new ModuleCoordinate("com.example", "noskill", "1.0.0");
         SkillEntry entry = manager.materializeSkill(
-                new ModuleCoordinate("com.example", "noskill", "1.0.0"), sidecar, tempDir.resolve("skills"), false, null);
+                noSkillCoordinate, noSkillCoordinate.skillName(), sidecar, tempDir.resolve("skills"), false, null);
 
         assertNull(entry);
     }
@@ -152,7 +153,7 @@ class SkillDirectoryManagerTest {
         Files.createDirectories(manual);
         Files.writeString(manual.resolve("SKILL.md"), "# Manual\n");
 
-        SkillEntry active = new SkillEntry(activeCoordinate, activeDir.resolve("SKILL.md"));
+        SkillEntry active = new SkillEntry(activeCoordinate, activeDir.resolve("SKILL.md"), activeCoordinate.skillName());
         manager.cleanupStaleManagedSkillDirectories(Set.of(active), root);
 
         assertTrue(Files.exists(activeDir));

@@ -1,18 +1,24 @@
 ---
 name: agent-docs-publish
-description: A Gradle plugin that packages library documentation into an agent-docs sidecar zip for distribution alongside Maven artifacts.
+description: A Gradle plugin that validates and distributes agent docs, either embedded in a project's own jar or as a sidecar zip, per the Agent-Docs manifest convention.
 ---
 
 # Agent Docs Publish Plugin
 
 Plugin ID: `io.github.duckasteroid.agent-docs.publish`
 
-Validates and packages a docs directory into a sidecar zip artifact with classifier `agent-docs`. When `maven-publish` is also applied, the zip is attached to every `MavenPublication` automatically.
+Validates a docs directory and distributes it one of two ways, controlled by `agentDocs.distribution`:
+
+- **`sidecar`** (default) — packages the docs into a separate zip artifact with classifier `agent-docs` (attached to every `MavenPublication` when `maven-publish` is applied) and stamps the main jar's manifest with `Agent-Docs: maven:<group>:<artifact>:<version>`.
+- **`embedded`** — copies the docs into the project's own jar (under `agent-docs/`) and stamps its manifest with `Agent-Docs: classpath`. No separate artifact is published.
+
+Either way, a consuming project's `agent-docs-resolve-gradle-plugin` (or any tool that understands the `Agent-Docs` manifest attribute) discovers and extracts the docs — see `specification/core-conventions.md` and `specification/java-conventions.md` at the repo root for the full convention. **This convention doesn't require this plugin at all** — the manifest attribute and docs bundle layout can be hand-written by anyone; this plugin is validation and packaging automation on top of it.
 
 ## Tasks added
 
 - `validateAgentDocs` — validates the docs directory against the Agent Skills spec
-- `packageAgentDocs` — packages docs into `build/agent-docs/<project-name>-agent-docs.zip`; runs validation first and is wired to `assemble`
+- `packageAgentDocs` — packages docs into `build/agent-docs/<project-name>-agent-docs.zip` for `sidecar` distribution; runs validation first and is wired to `assemble`; skipped when distribution is `embedded`
+- `prepareEmbeddedAgentDocs` — copies docs into the jar's own resources for `embedded` distribution; skipped when distribution is `sidecar`
 - `installAgentDocsPublishSkill` — writes this file into the local agent skills folder
 
 ## Docs source layout
@@ -41,8 +47,9 @@ Do not include a `name:` field — the resolver overwrites names from GAV coordi
 
 ```groovy
 agentDocs {
-  docsDirectory = file('src/agent-docs')         // default
+  docsDirectory = file('src/agent-docs')          // default
   disabledValidationRules = ['skill-name']        // optional; list of rule IDs to skip
+  distribution = AgentDocsDistribution.SIDECAR    // default; or EMBEDDED
 }
 ```
 

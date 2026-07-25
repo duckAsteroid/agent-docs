@@ -1,10 +1,25 @@
 # agent-docs
 
-This repository contains a toolchain for publishing, resolving, and consuming **agent-ready documentation** for binary dependencies.
+This repository defines and implements **agent docs**: a tool-agnostic convention for
+distributing agent-ready documentation alongside JAR dependencies, plus a Gradle
+toolchain (publish + resolve plugins) that implements it.
 
-It introduces an `agent-docs` sidecar artifact that travels with the same module/version as a library dependency, is resolved through standard Gradle/Maven repositories, copied into project-local skill folders by a Gradle resolver plugin, and exposed as local agent skills/resources.
+The full convention lives in [`specification/core-conventions.md`](./specification/core-conventions.md)
+(language-agnostic) and [`specification/java-conventions.md`](./specification/java-conventions.md)
+(the JAR/manifest specifics) — **read those first if you want the authoritative spec**;
+this README describes the Gradle tooling built on top of it. The convention is just a
+manifest attribute plus a docs directory layout — it doesn't require these plugins at
+all, they just automate it.
 
-- Local agent skills and resources under root `.agents/skills/`
+In short: a JAR advertises its agent docs with a single `Agent-Docs` manifest attribute,
+either `classpath[:path]` (docs embedded in the same jar) or `maven[:group:artifact:version]`
+(docs in a separate sidecar zip published alongside it). A consumer reads that attribute
+off each direct dependency's own resolved jar and, only when present, extracts the docs
+into project-local skill folders under `.agents/skills/`.
+
+Note: this repository currently covers regular Maven/JAR dependencies only. Agent docs
+for Gradle plugins (applied via the `plugins {}` block) is a deferred, not-yet-implemented
+extension of the same convention.
 
 ## Quickstart
 
@@ -35,17 +50,14 @@ Resolve docs sidecars and generate local agent files:
 ./gradlew resolveAgentDocs
 ```
 
-In this fictional example, the resolver attempts to fetch `com.acme:weather-core:1.4.0:agent-docs@zip` and extracts docs into:
+Dependencies whose jar carries an `Agent-Docs` manifest attribute get their docs
+extracted into `.agents/skills/<skill-name>/`; dependencies without it are skipped
+entirely. See
+[`agent-docs-resolve-gradle-plugin/README.md`](./agent-docs-resolve-gradle-plugin/README.md)
+for the full resolution mechanics and output layout.
 
-```text
-.agents/skills/com.acme__weather-core__1.4.0/
-```
-
-This extracted skill folder is expected to mirror the skill spec layout (`SKILL.md`, `references/`, `assets/`, `scripts/`) and includes a marker file at `.agent-docs`.
-
-The resolver also generates local LLM-agent-readable skills under root `.agents/skills/`.
-
-If you also maintain libraries and want to publish your own sidecar docs, see [publisher.md](./publisher.md).
+If you also maintain libraries and want to publish your own agent docs, see
+[`agent-docs-publish-gradle-plugin/README.md`](./agent-docs-publish-gradle-plugin/README.md).
 
 ### Contributor commands
 
@@ -67,12 +79,11 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 
 ## Modules
 
-- `agent-docs-publish-gradle-plugin` - starter Gradle plugin for packaging curated docs into an `agent-docs` zip
-- `agent-docs-resolve-gradle-plugin` - resolver plugin that resolves sidecars for direct dependencies, extracts docs under root `.agents/skills/<gav-skill-name>/` (skill-spec layout), overwrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder name, writes `.agent-docs` marker files for managed skill directories, and removes stale marker-owned dependency skill folders. Optionally fetches and unpacks the `sources` classifier jar into a `src/` subdirectory and annotates the skill with `metadata.sources` so agents can read source code without downloading anything themselves.
+- [`agent-docs-publish-gradle-plugin`](./agent-docs-publish-gradle-plugin/README.md) - validates and distributes a library's agent docs, embedded in its own jar or as a sidecar zip.
+- [`agent-docs-resolve-gradle-plugin`](./agent-docs-resolve-gradle-plugin/README.md) - discovers and extracts agent docs for a consuming project's dependencies into local skill folders.
+- `agent-docs-integration-tests` - end-to-end TestKit tests that run both plugins together.
 
-Notes:
-
-- Dependency folder names use a resolver rewrite strategy that enforces Agent Skills name constraints (`[a-z0-9-]`, no edge/consecutive hyphens, max 64 chars) and appends a hash suffix when truncation is needed.
+See each module's own README for its full behavior, extension options, and output layout. Agent docs for Gradle plugins (applied via `plugins {}`, not depended on directly) is a deferred extension of this same convention — not yet implemented.
 
 ## License
 

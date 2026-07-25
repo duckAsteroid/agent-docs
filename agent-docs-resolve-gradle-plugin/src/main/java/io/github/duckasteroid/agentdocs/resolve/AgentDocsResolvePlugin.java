@@ -3,26 +3,41 @@ package io.github.duckasteroid.agentdocs.resolve;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashSet;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsDeclaration;
+import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsManifestReader;
 import io.github.duckasteroid.agentdocs.resolve.task.InstallAgentDocsSkillTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
+import io.github.duckasteroid.agentdocs.resolve.task.ResolvedDependencyCollector;
+import io.github.duckasteroid.agentdocs.resolve.task.SidecarArtifactResolver;
+import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.result.ResolvedArtifactResult;
 
 /**
  * Registers the {@code agentDocs} extension and {@code resolveAgentDocs} task.
  *
- * <p>The task resolves sidecar artefacts, extracts docs for local use into the project skill
- * tree, and cleans stale marker-owned dependency skill folders.
+ * <p>For each direct dependency on the configured classpath, the task reads the {@code
+ * Agent-Docs} manifest attribute (per {@code specification/java-conventions.md}) from that
+ * dependency's own resolved jar. Dependencies without the attribute are skipped entirely, with no
+ * further resolution attempt of any kind. A {@code classpath} declaration is extracted directly
+ * from that same jar; a {@code maven} declaration is resolved as a separate {@code agent-docs}
+ * sidecar zip.
  *
- * <p>When {@code agentDocs.includeSources} is {@code true}, the task also resolves the
- * {@code sources} classifier jar for each dependency that has an agent-docs sidecar and unpacks
- * it into a {@code src/} subdirectory of the skill folder. The extracted {@code SKILL.md}
- * frontmatter records {@code metadata.sources: src/} when sources are available, or
- * {@code metadata.sources: none} when the sources jar is absent from the repository.
+ * <p>When {@code agentDocs.includeSources} is {@code true}, the task also resolves the {@code
+ * sources} classifier jar for each declared dependency and unpacks it into a {@code src/}
+ * subdirectory of the skill folder. The extracted {@code SKILL.md} frontmatter records {@code
+ * metadata.sources: src/} when sources are available, or {@code metadata.sources: none} when the
+ * sources jar is absent from the repository.
  *
  * <p>The task is intentionally configured to run on every invocation so dependency and
  * skill-folder clean-up stays current as dependencies change.
@@ -38,57 +53,83 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
                 project.getRootProject().getLayout().getProjectDirectory().dir(".agents/skills"));
         extension.getIncludeSources().convention(false);
 
+        SidecarArtifactResolver sidecarArtifactResolver = new SidecarArtifactResolver(
+                project.getConfigurations(), project.getDependencies(), project.getLogger());
+
         project.getTasks().register("resolveAgentDocs", ResolveAgentDocsTask.class, task -> {
             task.setGroup("agent docs");
-            task.setDescription("Resolves dependency sidecars and extracts dependency SKILL folders.");
+            task.setDescription("Resolves agent-docs manifest declarations and extracts dependency SKILL folders.");
             task.getOutputs().upToDateWhen(spec -> false);
             task.getConfigurationName().set(extension.getConfigurationName());
 
-            var dependencyCoordinates = extension.getConfigurationName()
-                    .map(name -> project.getConfigurations().getByName(name))
-                    .map(configuration -> {
-                        LinkedHashSet<String> coordinates = new LinkedHashSet<>();
-                        configuration.getAllDependencies().forEach(dependency -> {
-                            String group = dependency.getGroup();
-                            String artifact = dependency.getName();
-                            String version = dependency.getVersion();
-                            if (group == null
-                                    || group.isBlank()
-                                    || artifact.isBlank()
-                                    || version == null
-                                    || version.isBlank()) {
-                                return;
-                            }
-                            coordinates.add(group + ":" + artifact + ":" + version);
-                        });
-                        return coordinates.stream().toList();
-                    });
+            var declaredDependencies = extension.getConfigurationName().map(name -> {
+                Configuration configuration = project.getConfigurations().getByName(name);
+                Map<ComponentIdentifier, ModuleCoordinate> directCoordinates =
+                        ResolvedDependencyCollector.collectDirectDependencyCoordinates(configuration);
 
-            task.getDependencyCoordinates().set(dependencyCoordinates);
+                List<ResolvedArtifactResult> artifacts = new ArrayList<>(configuration.getIncoming()
+                        .artifactView(view -> {
+                            view.setLenient(true);
+                            view.componentFilter(directCoordinates::containsKey);
+                        })
+                        .getArtifacts()
+                        .getArtifacts());
 
-            task.getResolvedSidecarPaths().set(dependencyCoordinates.map(coordinates -> {
-                Map<String, String> resolvedSidecars = new LinkedHashMap<>();
-                for (String coordinate : coordinates) {
-                    String sidecarNotation = coordinate + ":agent-docs@zip";
-                    project.getLogger().info("Attempting to resolve agent-docs sidecar {}", sidecarNotation);
-
-                    var detached = project.getConfigurations().detachedConfiguration(
-                            project.getDependencies().create(sidecarNotation));
-                    detached.setTransitive(false);
-
-                    var files = detached.getIncoming()
-                            .artifactView(view -> view.lenient(true))
-                            .getFiles()
-                            .getFiles();
-                    if (files.isEmpty()) {
-                        project.getLogger().info("No agent-docs sidecar found for {}", coordinate);
+                List<DeclaredDependency> declarations = new ArrayList<>();
+                for (ResolvedArtifactResult artifact : artifacts) {
+                    ModuleCoordinate coordinate = directCoordinates.get(artifact.getId().getComponentIdentifier());
+                    if (coordinate == null) {
                         continue;
                     }
-
-                    var resolved = files.iterator().next();
-                    project.getLogger().info("Resolved agent-docs sidecar for {} at {}", coordinate, resolved.toPath());
-                    resolvedSidecars.put(coordinate, resolved.getAbsolutePath());
+                    Path jarPath = artifact.getFile().toPath();
+                    Optional<AgentDocsDeclaration> declaration = AgentDocsManifestReader.read(jarPath, project.getLogger());
+                    if (declaration.isEmpty()) {
+                        project.getLogger().debug("No Agent-Docs manifest attribute for {}", coordinate.gav());
+                        continue;
+                    }
+                    declarations.add(new DeclaredDependency(coordinate, jarPath, declaration.get()));
                 }
+                return declarations;
+            });
+
+            task.getDependencyCoordinates().set(
+                    declaredDependencies.map(declarations -> declarations.stream().map(d -> d.coordinate.gav()).toList()));
+
+            task.getSchemes().set(declaredDependencies.map(declarations -> {
+                Map<String, String> schemes = new LinkedHashMap<>();
+                declarations.forEach(d -> schemes.put(d.coordinate.gav(), d.declaration.scheme()));
+                return schemes;
+            }));
+
+            task.getClasspathJarPaths().set(declaredDependencies.map(declarations -> {
+                Map<String, String> jarPaths = new LinkedHashMap<>();
+                declarations.stream()
+                        .filter(d -> AgentDocsDeclaration.SCHEME_CLASSPATH.equals(d.declaration.scheme()))
+                        .forEach(d -> jarPaths.put(d.coordinate.gav(), d.jarPath.toAbsolutePath().toString()));
+                return jarPaths;
+            }));
+
+            task.getClasspathPrefixes().set(declaredDependencies.map(declarations -> {
+                Map<String, String> prefixes = new LinkedHashMap<>();
+                declarations.stream()
+                        .filter(d -> AgentDocsDeclaration.SCHEME_CLASSPATH.equals(d.declaration.scheme()))
+                        .forEach(d -> prefixes.put(
+                                d.coordinate.gav(),
+                                d.declaration.payload() != null ? d.declaration.payload() : AgentDocsDeclaration.DEFAULT_CLASSPATH_PATH));
+                return prefixes;
+            }));
+
+            task.getResolvedSidecarPaths().set(declaredDependencies.map(declarations -> {
+                Map<String, String> resolvedSidecars = new LinkedHashMap<>();
+                declarations.stream()
+                        .filter(d -> AgentDocsDeclaration.SCHEME_MAVEN.equals(d.declaration.scheme()))
+                        .forEach(d -> {
+                            ModuleCoordinate coordinate = resolveMavenCoordinate(d);
+                            Path sidecarPath = sidecarArtifactResolver.resolveSidecar(coordinate);
+                            if (sidecarPath != null) {
+                                resolvedSidecars.put(d.coordinate.gav(), sidecarPath.toAbsolutePath().toString());
+                            }
+                        });
                 return resolvedSidecars;
             }));
 
@@ -98,10 +139,10 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
                 if (!includeSources) {
                     return project.getProviders().provider(LinkedHashMap::new);
                 }
-                return dependencyCoordinates.map(coordinates -> {
+                return declaredDependencies.map(declarations -> {
                     Map<String, String> resolvedSources = new LinkedHashMap<>();
-                    for (String coordinate : coordinates) {
-                        String sourcesNotation = coordinate + ":sources@jar";
+                    for (DeclaredDependency declared : declarations) {
+                        String sourcesNotation = declared.coordinate.gav() + ":sources@jar";
                         project.getLogger().info("Attempting to resolve sources jar {}", sourcesNotation);
 
                         var detached = project.getConfigurations().detachedConfiguration(
@@ -113,13 +154,13 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
                                 .getFiles()
                                 .getFiles();
                         if (files.isEmpty()) {
-                            project.getLogger().info("No sources jar found for {}", coordinate);
+                            project.getLogger().info("No sources jar found for {}", declared.coordinate.gav());
                             continue;
                         }
 
                         var resolved = files.iterator().next();
-                        project.getLogger().info("Resolved sources jar for {} at {}", coordinate, resolved.toPath());
-                        resolvedSources.put(coordinate, resolved.getAbsolutePath());
+                        project.getLogger().info("Resolved sources jar for {} at {}", declared.coordinate.gav(), resolved.toPath());
+                        resolvedSources.put(declared.coordinate.gav(), resolved.getAbsolutePath());
                     }
                     return resolvedSources;
                 });
@@ -138,6 +179,24 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
         });
     }
 
+    /**
+     * A {@code maven}-scheme declaration's explicit {@code group:artifact:version} payload
+     * overrides the coordinate to resolve; a bare {@code maven} marker falls back to the
+     * dependency's own already-known coordinate, per {@code specification/java-conventions.md}
+     * §5 ("A resolved dependency ... use that GAV, regardless of ... distribution").
+     */
+    private static ModuleCoordinate resolveMavenCoordinate(DeclaredDependency declared) {
+        String payload = declared.declaration.payload();
+        if (payload == null) {
+            return declared.coordinate;
+        }
+        String[] segments = payload.split(":", 3);
+        if (segments.length != 3 || segments[0].isBlank() || segments[1].isBlank() || segments[2].isBlank()) {
+            return declared.coordinate;
+        }
+        return new ModuleCoordinate(segments[0], segments[1], segments[2]);
+    }
+
     private static String loadSkillResource() {
         try (InputStream is = AgentDocsResolvePlugin.class.getResourceAsStream("SKILL.md")) {
             if (is == null) {
@@ -147,5 +206,8 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to read bundled SKILL.md resource", e);
         }
+    }
+
+    private record DeclaredDependency(ModuleCoordinate coordinate, Path jarPath, AgentDocsDeclaration declaration) {
     }
 }

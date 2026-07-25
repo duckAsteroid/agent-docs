@@ -11,8 +11,8 @@
 - `agent-docs-resolve-gradle-plugin/README.md` for resolver extension options and per-dependency skill generation output.
 
 ## Repository structure that matters
-- `agent-docs-publish-gradle-plugin` packages docs from `src/agent-docs` into a sidecar zip and requires exactly one `SKILL.md` entrypoint (case-insensitive) with Agent Skills frontmatter (`description`; `name` is optional input and omitted from the packaged sidecar with a warning).
-- `agent-docs-resolve-gradle-plugin` resolves configured dependencies, extracts docs under `.agent/skills/<gav-skill-name>/` using skill-spec layout (`SKILL.md`, `references/`, `assets/`, `scripts/`), rewrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder, writes `.agent-docs` ownership markers for managed folders, and removes stale marker-owned dependency skill folders.
+- `agent-docs-publish-gradle-plugin` validates a `src/agent-docs` docs root (exactly one `SKILL.md` entrypoint, case-insensitive, with `description` frontmatter) and distributes it embedded in the project's own jar or as a sidecar zip, per `specification/java-conventions.md`. Full behavior: `agent-docs-publish-gradle-plugin/README.md`.
+- `agent-docs-resolve-gradle-plugin` reads the `Agent-Docs` manifest attribute from each dependency's own resolved jar and, only when present, extracts docs under `.agents/skills/<skill-name>/` (shortest safe name per run, escalating only on collision) using skill-spec layout, rewrites extracted `SKILL.md` frontmatter `name` to match each rewritten folder, writes `.agent-docs` ownership markers for managed folders, and removes stale marker-owned dependency skill folders. Full behavior: `agent-docs-resolve-gradle-plugin/README.md`.
 
 ## Current conventions
 - Java 21 everywhere; Gradle Groovy build scripts.
