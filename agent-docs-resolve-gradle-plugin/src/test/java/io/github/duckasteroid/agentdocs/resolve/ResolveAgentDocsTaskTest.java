@@ -440,16 +440,16 @@ class ResolveAgentDocsTaskTest {
 
         Path implRoot = projectDir.resolve(".agents/skills/dep-impl");
         String implSkill = Files.readString(implRoot.resolve("SKILL.md"));
-        assertTrue(implSkill.contains("sources: src/"), "Expected sources path in metadata");
-        assertTrue(Files.exists(implRoot.resolve("src/com/example/dep/impl/Main.java")),
-                "Expected sources extracted to src/ subdirectory");
+        assertTrue(implSkill.contains("sources: assets/sources/"), "Expected sources path in metadata");
+        assertTrue(Files.exists(implRoot.resolve("assets/sources/com/example/dep/impl/Main.java")),
+                "Expected sources extracted to assets/sources/ subdirectory");
 
         Path noSourcesRoot = projectDir.resolve(".agents/skills/dep-no-sources");
         String noSourcesSkill = Files.readString(noSourcesRoot.resolve("SKILL.md"));
         assertTrue(noSourcesSkill.contains("sources: none"),
                 "Expected 'none' when sources jar is absent");
-        assertTrue(Files.notExists(noSourcesRoot.resolve("src/")),
-                "Expected no src/ directory when sources unavailable");
+        assertTrue(Files.notExists(noSourcesRoot.resolve("assets/sources/")),
+                "Expected no assets/sources/ directory when sources unavailable");
     }
 
     @Test

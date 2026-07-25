@@ -162,10 +162,10 @@ class SkillDirectoryManagerTest {
 
         assertNotNull(entry);
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
-        assertTrue(Files.exists(skillDir.resolve("src/com/example/Demo.java")));
+        assertTrue(Files.exists(skillDir.resolve("assets/sources/com/example/Demo.java")));
         String content = Files.readString(entry.entrypointPath());
         assertTrue(content.contains("group: com.example"));
-        assertTrue(content.contains("sources: src/"));
+        assertTrue(content.contains("sources: assets/sources/"));
     }
 
     @Test
@@ -183,7 +183,7 @@ class SkillDirectoryManagerTest {
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
         assertTrue(content.contains("sources: none"));
-        assertTrue(!content.contains("src/"));
+        assertTrue(!content.contains("assets/sources/"));
     }
 
     @Test

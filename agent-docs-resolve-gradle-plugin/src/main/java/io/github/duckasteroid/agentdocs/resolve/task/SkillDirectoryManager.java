@@ -22,7 +22,7 @@ import org.gradle.api.logging.Logger;
 final class SkillDirectoryManager {
     private static final String SKILL_ENTRYPOINT_FILENAME = "SKILL.md";
     private static final String OWNERSHIP_MARKER_FILENAME = ".agent-docs";
-    private static final String SOURCES_SUBDIRECTORY = "src/";
+    private static final String SOURCES_SUBDIRECTORY = "assets/sources/";
     private static final Set<String> MANAGED_METADATA_KEYS = Set.of("group", "artifact", "version", "sources");
 
     private final Logger logger;
@@ -43,8 +43,10 @@ final class SkillDirectoryManager {
      * <p>The {@code SKILL.md} frontmatter always receives {@code metadata.group},
      * {@code metadata.artifact} and {@code metadata.version} fields recording the resolved GAV.
      * When {@code includeSources} is {@code true}, the resolver also attempts to unpack the
-     * sources jar into a {@code src/} subdirectory and adds a {@code metadata.sources} field:
-     * {@code src/} when sources were unpacked, {@code none} when the sources jar was unavailable.
+     * sources jar into an {@code assets/sources/} subdirectory (per the Agent Skills convention
+     * that static resources live under {@code assets/}) and adds a {@code metadata.sources}
+     * field: {@code assets/sources/} when sources were unpacked, {@code none} when the sources
+     * jar was unavailable.
      *
      * @param coordinate dependency coordinate
      * @param sidecarPath resolved sidecar archive
@@ -249,8 +251,9 @@ final class SkillDirectoryManager {
      * @param entrypoint path to the extracted SKILL.md
      * @param skillName canonical skill name derived from GAV coordinates
      * @param coordinate resolved dependency coordinate
-     * @param sourcesMetadataValue {@code "src/"} when sources were extracted, {@code "none"} when
-     *     sources were requested but unavailable, or {@code null} when sources were not requested
+     * @param sourcesMetadataValue {@code "assets/sources/"} when sources were extracted,
+     *     {@code "none"} when sources were requested but unavailable, or {@code null} when
+     *     sources were not requested
      * @throws IOException when reading or writing the file fails
      */
     private void rewriteEntrypointFrontmatter(

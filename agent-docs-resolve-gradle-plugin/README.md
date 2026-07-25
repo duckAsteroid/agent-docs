@@ -20,8 +20,8 @@ Note: this plugin currently only discovers agent docs for regular dependencies o
 When `includeSources` is enabled, the plugin additionally:
 
 - Fetches the `<group>:<artifact>:<version>:sources@jar` for each dependency.
-- Unpacks the sources jar into `src/` inside the skill folder so agents can read source code directly without downloading or unzipping anything themselves.
-- Injects a `metadata.sources` field alongside the GAV metadata: `src/` when sources were extracted, `none` when the sources jar is absent from the repository.
+- Unpacks the sources jar into `assets/sources/` inside the skill folder (per the [Agent Skills convention](https://agentskills.io/specification#assets) that static resources live under `assets/`) so agents can read source code directly without downloading or unzipping anything themselves.
+- Injects a `metadata.sources` field alongside the GAV metadata: `assets/sources/` when sources were extracted, `none` when the sources jar is absent from the repository.
 
 ## Description prefix
 
@@ -94,9 +94,10 @@ With `includeSources = true`:
 ```text
 .agents/skills/
   <skill-name>/
-    SKILL.md          ← metadata.group/artifact/version + metadata.sources: src/ (or none if sources jar absent)
-    src/              ← unpacked sources jar (only when available)
-      com/example/…
+    SKILL.md          ← metadata.group/artifact/version + metadata.sources: assets/sources/ (or none if sources jar absent)
+    assets/
+      sources/        ← unpacked sources jar (only when available)
+        com/example/…
     .agent-docs
 ```
 
@@ -104,8 +105,8 @@ With `includeSources = true`:
 resolved GAV regardless of `includeSources`. The `metadata.sources` field tells agents what source
 code is available, on top of that:
 
-| Value   | Meaning                                                        |
-|---------|----------------------------------------------------------------|
-| `src/`  | Sources extracted — read from that subdirectory                |
-| `none`  | Sources were requested but unavailable in the repository       |
-| absent  | `includeSources` was not enabled when this skill was extracted |
+| Value            | Meaning                                                        |
+|-------------------|----------------------------------------------------------------|
+| `assets/sources/` | Sources extracted — read from that subdirectory                |
+| `none`            | Sources were requested but unavailable in the repository       |
+| absent            | `includeSources` was not enabled when this skill was extracted |
