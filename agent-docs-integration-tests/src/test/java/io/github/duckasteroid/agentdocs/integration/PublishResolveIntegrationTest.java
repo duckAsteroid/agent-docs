@@ -21,7 +21,7 @@ class PublishResolveIntegrationTest {
     private static final String GROUP = "com.example";
     private static final String ARTIFACT = "sample-lib";
     private static final String VERSION = "1.2.3";
-    private static final String REWRITTEN_SKILL_NAME = "com-example-sample-lib-1-2-3";
+    private static final String REWRITTEN_SKILL_NAME = "sample-lib";
     private static final String DEFAULT_TEST_GRADLE_VERSION = "9.5.1";
 
     @TempDir
