@@ -12,8 +12,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.Copy;
@@ -50,6 +52,27 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
         extension.getSkillsDirectory().convention(
                 project.getRootProject().getLayout().getProjectDirectory().dir(".agents/skills"));
         extension.getDistribution().convention(AgentDocsDistribution.SIDECAR);
+
+        // Gradle plugin jars aren't resolved as Maven dependencies the way regular libraries are
+        // (they're applied via the plugins {} DSL and resolved through the plugin portal/
+        // pluginManagement, not the compile/runtime classpath), so a sidecar `agent-docs@zip`
+        // published alongside them has no consumer-side resolution path yet. Embedding keeps docs
+        // discoverable from the plugin's own jar regardless, so it's both the default and the only
+        // supported mode for these projects - an explicit SIDECAR override is a configuration error
+        // we fail fast on, rather than silently publishing a sidecar nothing can ever resolve.
+        project.getPluginManager().withPlugin("java-gradle-plugin", ignored -> {
+            extension.getDistribution().convention(AgentDocsDistribution.EMBEDDED);
+            project.afterEvaluate(ignoredProject -> {
+                if (extension.getDistribution().get() == AgentDocsDistribution.SIDECAR) {
+                    throw new GradleException(
+                            "agentDocs.distribution = SIDECAR is not supported in project '" + project.getPath()
+                                    + "' because the java-gradle-plugin plugin is applied: Gradle plugins aren't "
+                                    + "resolved as Maven dependencies, so a sidecar agent-docs archive would have "
+                                    + "no consumer-side resolution path. Remove the distribution override (EMBEDDED "
+                                    + "is the default for plugin projects) or set it to EMBEDDED explicitly.");
+                }
+            });
+        });
 
         Provider<Set<String>> disabledRulesFromProperties = project.getProviders()
                 .gradleProperty("agentDocs.disabledValidationRules")
@@ -94,17 +117,17 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             task.doFirst(ignored -> writeProcessedSkillEntrypoint(
                     extension.getDocsDirectory().get().getAsFile(), task.getTemporaryDir()));
             task.into(project.getLayout().getBuildDirectory().dir("agent-docs/embedded"));
-            task.from(extension.getDocsDirectory(), spec -> {
-                spec.into(EMBEDDED_RESOURCE_ROOT);
-                // Filtering via exclude(Spec) on the source tree, rather than eachFile()+exclude(),
-                // since eachFile()'s relative path here reflects the post-into() destination path
-                // (two segments, "agent-docs/SKILL.md") rather than the source-root-relative path
-                // eachFile() sees in the flat (no nested into()) packageAgentDocs task above -
-                // using eachFile() here silently never excludes the root SKILL.md, producing a
-                // duplicate-entry failure against the processed copy added below.
-                spec.exclude(element -> element.getRelativePath().getSegments().length == 1
-                        && element.getName().equalsIgnoreCase("skill.md"));
-            });
+            // Deliberately not excluding the raw SKILL.md here (unlike packageAgentDocs' Zip task):
+            // Copy's getSource() is @SkipWhenEmpty, and that check runs before doFirst populates the
+            // temporary dir, so when docsDirectory contains nothing but SKILL.md, excluding it would
+            // make the merged source look empty and the whole task - including doFirst - would be
+            // skipped as NO-SOURCE, silently embedding nothing. Copying the raw SKILL.md keeps the
+            // source always non-empty (validateAgentDocs already guarantees it exists); the processed
+            // copy from the temp dir is added after and overwrites it at the same destination path -
+            // duplicatesStrategy.INCLUDE is required for Copy to allow that overwrite instead of
+            // failing on the intentional duplicate relative path.
+            task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
+            task.from(extension.getDocsDirectory(), spec -> spec.into(EMBEDDED_RESOURCE_ROOT));
             task.from(task.getTemporaryDir(), spec -> spec.into(EMBEDDED_RESOURCE_ROOT).include("SKILL.md"));
         });
 

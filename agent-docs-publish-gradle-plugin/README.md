@@ -28,6 +28,8 @@ Controlled by `agentDocs.distribution` (default `SIDECAR`):
 - **`SIDECAR`** (default) — packages docs into `build/agent-docs/<project-name>-agent-docs.zip` (full docs root contents at the zip root); if `maven-publish` is applied, attaches it to every `MavenPublication` with classifier `agent-docs`; stamps the main jar's manifest with `Agent-Docs: maven:<group>:<artifact>:<version>`.
 - **`EMBEDDED`** — copies docs into the project's own jar under `agent-docs/`, with no separate artifact published; stamps the main jar's manifest with `Agent-Docs: classpath`.
 
+If the `java-gradle-plugin` plugin is applied, `distribution` defaults to `EMBEDDED` instead of `SIDECAR`, and any explicit `SIDECAR` override fails the build at configuration time. Gradle plugins are resolved via the plugin portal/`pluginManagement`, not the compile/runtime classpath, so a sidecar `agent-docs@zip` artifact published alongside a plugin jar has no consumer-side resolution path — embedding is the only mode that works for these projects.
+
 ## Quick start
 
 Apply the plugin in your library project:

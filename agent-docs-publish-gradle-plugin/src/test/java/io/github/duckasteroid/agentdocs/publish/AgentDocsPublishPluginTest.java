@@ -559,6 +559,97 @@ class AgentDocsPublishPluginTest {
                 "Expected no sidecar zip in embedded mode");
     }
 
+    @Test
+    void javaGradlePluginProjectDefaultsToEmbeddedDistribution() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.2.3'
+
+                gradlePlugin {
+                    plugins {
+                        sample {
+                            id = 'com.example.sample'
+                            implementationClass = 'com.example.SamplePlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SamplePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SamplePlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Sample plugin docs."));
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("jar", "packageAgentDocs")
+                .build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":jar").getOutcome());
+        assertEquals(TaskOutcome.SKIPPED, result.task(":packageAgentDocs").getOutcome());
+
+        Path jarPath = projectDir.resolve("build/libs/sample-plugin-1.2.3.jar");
+        assertTrue(Files.exists(jarPath), "Expected main jar to be built");
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            assertEquals("classpath", jarFile.getManifest().getMainAttributes().getValue("Agent-Docs"));
+            assertNotNull(jarFile.getEntry("agent-docs/SKILL.md"), "Expected embedded SKILL.md inside jar");
+        }
+    }
+
+    @Test
+    void javaGradlePluginProjectFailsFastOnExplicitSidecarOverride() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.2.3'
+
+                agentDocs {
+                    distribution = 'SIDECAR'
+                }
+
+                gradlePlugin {
+                    plugins {
+                        sample {
+                            id = 'com.example.sample'
+                            implementationClass = 'com.example.SamplePlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SamplePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SamplePlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Sample plugin docs."));
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("jar", "packageAgentDocs")
+                .buildAndFail();
+
+        assertTrue(result.getOutput().contains("agentDocs.distribution = SIDECAR is not supported"),
+                "Expected build to fail fast on SIDECAR override in a java-gradle-plugin project");
+    }
+
     private static void writeFile(Path filePath, String content) throws IOException {
         Files.createDirectories(filePath.getParent());
         Files.writeString(filePath, content);
