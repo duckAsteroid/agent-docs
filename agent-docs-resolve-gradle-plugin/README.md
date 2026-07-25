@@ -11,7 +11,7 @@ This plugin reads the `Agent-Docs` manifest attribute (see [`specification/core-
 - `Agent-Docs: maven[:group:artifact:version]` — resolves a separate `<group>:<artifact>:<version>:agent-docs@zip` sidecar (at the dependency's own coordinates, or the explicitly declared ones) and extracts it.
 - Extracts the resulting bundle to `.agents/skills/<skill-name>/` (for example `SKILL.md`, `references/`, `assets/`, `scripts/`).
 - Assigns each dependency the shortest safe skill name (see "Skill naming" below), preserving readability and adding hash suffixes when needed for uniqueness under 64 chars.
-- Overwrites each extracted dependency `SKILL.md` frontmatter `name` to match the rewritten folder name.
+- Rewrites each extracted dependency `SKILL.md` frontmatter: `name` becomes the rewritten folder name; `description` is prefixed with a generated sentence identifying the library (see "Description prefix" below); `metadata.group`, `metadata.artifact`, and `metadata.version` record the resolved GAV. Only these specific fields are overwritten — any other upstream frontmatter, including unrelated `metadata` keys, passes through untouched.
 - Writes an ownership marker file at `.agents/skills/<skill-name>/.agent-docs`.
 - Removes stale, marker-owned dependency skill folders when those dependencies are no longer in the project.
 
@@ -21,7 +21,22 @@ When `includeSources` is enabled, the plugin additionally:
 
 - Fetches the `<group>:<artifact>:<version>:sources@jar` for each dependency.
 - Unpacks the sources jar into `src/` inside the skill folder so agents can read source code directly without downloading or unzipping anything themselves.
-- Injects a `metadata.sources` field into the extracted `SKILL.md` frontmatter: `src/` when sources were extracted, `none` when the sources jar is absent from the repository.
+- Injects a `metadata.sources` field alongside the GAV metadata: `src/` when sources were extracted, `none` when the sources jar is absent from the repository.
+
+## Description prefix
+
+Every extracted skill's `description` is prefixed with a generated, Java/Maven-specific sentence
+identifying the library, e.g.:
+
+```
+Reference documentation for the Java library `com.example:demo` (Maven, resolved version 1.0.0).
+Use this skill when writing, reviewing, or debugging code that depends on it.
+```
+
+If the upstream `SKILL.md` already had a `description`, it's appended after this generated prefix
+rather than replaced — so authors can still add library-specific detail on top of the generic
+"this is library X, use it when..." framing. The combined value is written as a double-quoted YAML
+scalar so any colons or quotes in either half stay valid.
 
 ## Skill naming
 
@@ -79,13 +94,15 @@ With `includeSources = true`:
 ```text
 .agents/skills/
   <skill-name>/
-    SKILL.md          ← metadata.sources: src/  (or none if sources jar absent)
+    SKILL.md          ← metadata.group/artifact/version + metadata.sources: src/ (or none if sources jar absent)
     src/              ← unpacked sources jar (only when available)
       com/example/…
     .agent-docs
 ```
 
-The `metadata.sources` frontmatter field tells agents what is available:
+`metadata.group`, `metadata.artifact`, and `metadata.version` are always present, recording the
+resolved GAV regardless of `includeSources`. The `metadata.sources` field tells agents what source
+code is available, on top of that:
 
 | Value   | Meaning                                                        |
 |---------|----------------------------------------------------------------|
