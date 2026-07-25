@@ -440,13 +440,13 @@ class ResolveAgentDocsTaskTest {
 
         Path implRoot = projectDir.resolve(".agents/skills/dep-impl");
         String implSkill = Files.readString(implRoot.resolve("SKILL.md"));
-        assertTrue(implSkill.contains("metadata:\n  sources: src/"), "Expected sources path in metadata");
+        assertTrue(implSkill.contains("sources: src/"), "Expected sources path in metadata");
         assertTrue(Files.exists(implRoot.resolve("src/com/example/dep/impl/Main.java")),
                 "Expected sources extracted to src/ subdirectory");
 
         Path noSourcesRoot = projectDir.resolve(".agents/skills/dep-no-sources");
         String noSourcesSkill = Files.readString(noSourcesRoot.resolve("SKILL.md"));
-        assertTrue(noSourcesSkill.contains("metadata:\n  sources: none"),
+        assertTrue(noSourcesSkill.contains("sources: none"),
                 "Expected 'none' when sources jar is absent");
         assertTrue(Files.notExists(noSourcesRoot.resolve("src/")),
                 "Expected no src/ directory when sources unavailable");
@@ -474,7 +474,7 @@ class ResolveAgentDocsTaskTest {
 
         Path implRoot = projectDir.resolve(".agents/skills/dep-impl");
         String skillContent = Files.readString(implRoot.resolve("SKILL.md"));
-        assertTrue(!skillContent.contains("metadata:"), "Expected no metadata block when includeSources is false");
+        assertTrue(skillContent.contains("group: com.example"), "Expected GAV metadata regardless of includeSources");
         assertTrue(!skillContent.contains("sources:"), "Expected no sources field when includeSources is false");
     }
 

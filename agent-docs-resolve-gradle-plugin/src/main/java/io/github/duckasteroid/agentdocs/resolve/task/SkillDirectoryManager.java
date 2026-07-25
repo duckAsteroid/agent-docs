@@ -23,6 +23,7 @@ final class SkillDirectoryManager {
     private static final String SKILL_ENTRYPOINT_FILENAME = "SKILL.md";
     private static final String OWNERSHIP_MARKER_FILENAME = ".agent-docs";
     private static final String SOURCES_SUBDIRECTORY = "src/";
+    private static final Set<String> MANAGED_METADATA_KEYS = Set.of("group", "artifact", "version", "sources");
 
     private final Logger logger;
 
@@ -39,10 +40,11 @@ final class SkillDirectoryManager {
     /**
      * Extracts a dependency sidecar into the managed skill directory and returns the entry.
      *
-     * <p>When {@code includeSources} is {@code true}, the resolver also attempts to unpack the
-     * sources jar into a {@code src/} subdirectory. The {@code SKILL.md} frontmatter receives a
-     * {@code metadata.sources} field: {@code src/} when sources were unpacked, {@code none} when
-     * the sources jar was unavailable.
+     * <p>The {@code SKILL.md} frontmatter always receives {@code metadata.group},
+     * {@code metadata.artifact} and {@code metadata.version} fields recording the resolved GAV.
+     * When {@code includeSources} is {@code true}, the resolver also attempts to unpack the
+     * sources jar into a {@code src/} subdirectory and adds a {@code metadata.sources} field:
+     * {@code src/} when sources were unpacked, {@code none} when the sources jar was unavailable.
      *
      * @param coordinate dependency coordinate
      * @param sidecarPath resolved sidecar archive
@@ -124,7 +126,7 @@ final class SkillDirectoryManager {
             return null;
         }
 
-        rewriteEntrypointFrontmatter(entrypoint, skillName, sourcesMetadataValue);
+        rewriteEntrypointFrontmatter(entrypoint, skillName, coordinate, sourcesMetadataValue);
         return new SkillEntry(coordinate, entrypoint, skillName);
     }
 
@@ -235,68 +237,147 @@ final class SkillDirectoryManager {
     }
 
     /**
-     * Rewrites the SKILL.md frontmatter to set the canonical {@code name} and, when sources were
-     * resolved, inject a {@code metadata.sources} field.
+     * Rewrites the SKILL.md frontmatter to set the canonical {@code name}, prepend a
+     * library-identifying prefix onto {@code description}, and record the resolved GAV (plus,
+     * when sources were resolved, a {@code sources} field) under {@code metadata}.
      *
-     * <p>Any existing {@code name:} or {@code metadata:} blocks in the sidecar are stripped before
-     * the rewrite so that resolver-generated values are always authoritative.
+     * <p>Only the specific fields the resolver owns are overwritten: the top-level {@code name}
+     * and {@code description}, and the {@code group}/{@code artifact}/{@code version}/
+     * {@code sources} keys within {@code metadata}. Any other upstream frontmatter — including
+     * unrelated {@code metadata} entries — is preserved untouched.
      *
      * @param entrypoint path to the extracted SKILL.md
      * @param skillName canonical skill name derived from GAV coordinates
+     * @param coordinate resolved dependency coordinate
      * @param sourcesMetadataValue {@code "src/"} when sources were extracted, {@code "none"} when
      *     sources were requested but unavailable, or {@code null} when sources were not requested
      * @throws IOException when reading or writing the file fails
      */
-    private void rewriteEntrypointFrontmatter(Path entrypoint, String skillName, String sourcesMetadataValue) throws IOException {
+    private void rewriteEntrypointFrontmatter(
+            Path entrypoint, String skillName, ModuleCoordinate coordinate, String sourcesMetadataValue) throws IOException {
         String normalized = Files.readString(entrypoint).replace("\r\n", "\n");
         String rewritten;
 
-        String metadataSuffix = sourcesMetadataValue != null
-                ? "\nmetadata:\n  sources: " + sourcesMetadataValue
-                : "";
+        List<String> metadataLines = new ArrayList<>();
+        metadataLines.add("  group: " + coordinate.group());
+        metadataLines.add("  artifact: " + coordinate.artifact());
+        metadataLines.add("  version: " + coordinate.version());
+        if (sourcesMetadataValue != null) {
+            metadataLines.add("  sources: " + sourcesMetadataValue);
+        }
 
         if (normalized.startsWith("---\n")) {
             int closingIndex = normalized.indexOf("\n---\n", 4);
             if (closingIndex >= 0) {
                 String frontmatterBlock = normalized.substring(4, closingIndex);
                 String body = normalized.substring(closingIndex + 5);
-                List<String> retainedLines = stripManagedFrontmatterFields(frontmatterBlock.lines().toList());
-                String updatedFrontmatter = "name: " + skillName
-                        + (retainedLines.isEmpty() ? "" : "\n" + String.join("\n", retainedLines))
-                        + metadataSuffix;
-                rewritten = "---\n" + updatedFrontmatter + "\n---\n" + body;
+                FrontmatterFields fields = extractFrontmatterFields(frontmatterBlock.lines().toList());
+                metadataLines.addAll(fields.retainedMetadataLines());
+
+                List<String> topLevel = new ArrayList<>();
+                topLevel.add("name: " + skillName);
+                topLevel.add("description: " + yamlQuote(buildDescription(coordinate, fields.description())));
+                topLevel.addAll(fields.otherTopLevelLines());
+                topLevel.add("metadata:");
+                topLevel.addAll(metadataLines);
+
+                rewritten = "---\n" + String.join("\n", topLevel) + "\n---\n" + body;
             } else {
                 rewritten = normalized;
             }
         } else {
-            rewritten = "---\nname: " + skillName + metadataSuffix + "\n---\n\n" + normalized;
+            List<String> topLevel = new ArrayList<>();
+            topLevel.add("name: " + skillName);
+            topLevel.add("description: " + yamlQuote(buildDescription(coordinate, null)));
+            topLevel.add("metadata:");
+            topLevel.addAll(metadataLines);
+            rewritten = "---\n" + String.join("\n", topLevel) + "\n---\n\n" + normalized;
         }
 
         Files.writeString(entrypoint, rewritten);
     }
 
     /**
-     * Filters frontmatter lines, removing {@code name:} entries and {@code metadata:} blocks
-     * (including their indented children) so resolver-generated values can be injected cleanly.
+     * Builds the resolver-generated skill description: a Java/Maven-specific sentence identifying
+     * the library this skill documents, followed by the upstream author's own description (if
+     * any) — matching the core convention's "generated prefix, author description appended" rule.
      */
-    private static List<String> stripManagedFrontmatterFields(List<String> lines) {
-        List<String> result = new ArrayList<>();
+    private static String buildDescription(ModuleCoordinate coordinate, String upstreamDescription) {
+        String prefix = "Reference documentation for the Java library `" + coordinate.group() + ":"
+                + coordinate.artifact() + "` (Maven, resolved version " + coordinate.version()
+                + "). Use this skill when writing, reviewing, or debugging code that depends on it.";
+        if (upstreamDescription == null || upstreamDescription.isBlank()) {
+            return prefix;
+        }
+        return prefix + " " + unquoteYamlScalar(upstreamDescription);
+    }
+
+    /**
+     * Holds the parts of an upstream frontmatter block that survive the resolver's rewrite:
+     * top-level lines other than {@code name:}/{@code description:}, the raw upstream
+     * {@code description} value (or {@code null}), and {@code metadata} children other than the
+     * resolver-managed keys.
+     */
+    private record FrontmatterFields(List<String> otherTopLevelLines, String description, List<String> retainedMetadataLines) {
+    }
+
+    /**
+     * Parses a frontmatter block, pulling out the fields the resolver manages so they can be
+     * regenerated, and retaining everything else (including non-managed {@code metadata} keys)
+     * untouched.
+     */
+    private static FrontmatterFields extractFrontmatterFields(List<String> lines) {
+        List<String> otherTopLevelLines = new ArrayList<>();
+        List<String> retainedMetadataLines = new ArrayList<>();
+        String description = null;
         boolean inMetadataBlock = false;
+
         for (String line : lines) {
-            if (line.trim().startsWith("name:")) {
-                inMetadataBlock = false;
-                continue;
-            }
-            if (line.startsWith("metadata:")) {
-                inMetadataBlock = true;
-                continue;
-            }
             if (inMetadataBlock && (line.startsWith(" ") || line.startsWith("\t"))) {
+                String key = childKey(line);
+                if (key == null || !MANAGED_METADATA_KEYS.contains(key)) {
+                    retainedMetadataLines.add(line);
+                }
                 continue;
             }
             inMetadataBlock = false;
-            result.add(line);
+
+            String trimmed = line.trim();
+            if (trimmed.startsWith("name:")) {
+                continue;
+            }
+            if (line.equals("metadata:")) {
+                inMetadataBlock = true;
+                continue;
+            }
+            if (trimmed.startsWith("description:")) {
+                description = trimmed.substring("description:".length()).trim();
+                continue;
+            }
+            otherTopLevelLines.add(line);
         }
-        return result;
+
+        return new FrontmatterFields(otherTopLevelLines, description, retainedMetadataLines);
+    }
+
+    private static String childKey(String line) {
+        String trimmed = line.trim();
+        int colonIndex = trimmed.indexOf(':');
+        return colonIndex < 0 ? null : trimmed.substring(0, colonIndex).trim();
+    }
+
+    private static String unquoteYamlScalar(String raw) {
+        String value = raw.trim();
+        if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
+            return value.substring(1, value.length() - 1).replace("\\\"", "\"").replace("\\\\", "\\");
+        }
+        if (value.length() >= 2 && value.charAt(0) == '\'' && value.charAt(value.length() - 1) == '\'') {
+            return value.substring(1, value.length() - 1).replace("''", "'");
+        }
+        return value;
+    }
+
+    private static String yamlQuote(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 }

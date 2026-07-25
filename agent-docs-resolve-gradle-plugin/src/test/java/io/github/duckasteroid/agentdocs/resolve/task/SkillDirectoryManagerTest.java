@@ -37,11 +37,13 @@ class SkillDirectoryManagerTest {
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
         assertTrue(Files.notExists(skillDir.resolve("agent-docs.zip")));
         assertTrue(Files.exists(skillDir.resolve(".agent-docs")));
-        assertTrue(Files.readString(entry.entrypointPath()).contains("name: " + coordinate.skillName()));
+        String content = Files.readString(entry.entrypointPath());
+        assertTrue(content.contains("name: " + coordinate.skillName()));
+        assertTrue(content.contains("com.example:demo"));
     }
 
     @Test
-    void materializeSkillDoesNotInjectSourcesMetadataWhenIncludeSourcesIsFalse() throws IOException {
+    void materializeSkillAlwaysRecordsGavMetadataAndDescriptionPrefix() throws IOException {
         Path sidecar = tempDir.resolve("sidecar.zip");
         writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\ndescription: test\n---\n\n# Body\n");
         Path skillsRoot = tempDir.resolve("skills");
@@ -55,8 +57,93 @@ class SkillDirectoryManagerTest {
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
         assertTrue(content.contains("name: " + coordinate.skillName()));
-        assertTrue(!content.contains("metadata:"));
+        assertTrue(content.contains("metadata:"));
+        assertTrue(content.contains("group: com.example"));
+        assertTrue(content.contains("artifact: demo"));
+        assertTrue(content.contains("version: 1.0.0"));
         assertTrue(!content.contains("sources:"));
+        assertTrue(content.contains("com.example:demo"));
+        assertTrue(content.contains("test"));
+    }
+
+    @Test
+    void materializeSkillPrependsGeneratedDescriptionWhenNoUpstreamDescriptionPresent() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        String expectedLine = "description: " + yamlQuoteExpected(expectedGeneratedPrefix(coordinate));
+        assertTrue(content.lines().anyMatch(expectedLine::equals),
+                "Expected description line [" + expectedLine + "] in:\n" + content);
+    }
+
+    @Test
+    void materializeSkillPrependsGeneratedDescriptionWhenNoFrontmatterPresentAtAll() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "# Original\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        String expectedLine = "description: " + yamlQuoteExpected(expectedGeneratedPrefix(coordinate));
+        assertTrue(content.lines().anyMatch(expectedLine::equals),
+                "Expected description line [" + expectedLine + "] in:\n" + content);
+    }
+
+    @Test
+    void materializeSkillAppendsUpstreamDescriptionAfterGeneratedPrefix() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md",
+                "---\nname: original\ndescription: Handles core domain logic.\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        String expectedLine = "description: "
+                + yamlQuoteExpected(expectedGeneratedPrefix(coordinate) + " Handles core domain logic.");
+        assertTrue(content.lines().anyMatch(expectedLine::equals),
+                "Expected description line [" + expectedLine + "] in:\n" + content);
+    }
+
+    @Test
+    void materializeSkillEscapesQuotesAndColonsInUpstreamDescription() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md",
+                "---\nname: original\ndescription: 'He said: \"cache the client\" for speed.'\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        ModuleCoordinate coordinate = new ModuleCoordinate("com.example", "demo", "1.0.0");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        String expectedLine = "description: " + yamlQuoteExpected(
+                expectedGeneratedPrefix(coordinate) + " He said: \"cache the client\" for speed.");
+        assertTrue(content.lines().anyMatch(expectedLine::equals),
+                "Expected description line [" + expectedLine + "] in:\n" + content);
     }
 
     @Test
@@ -77,7 +164,8 @@ class SkillDirectoryManagerTest {
         Path skillDir = skillsRoot.resolve(coordinate.skillName());
         assertTrue(Files.exists(skillDir.resolve("src/com/example/Demo.java")));
         String content = Files.readString(entry.entrypointPath());
-        assertTrue(content.contains("metadata:\n  sources: src/"));
+        assertTrue(content.contains("group: com.example"));
+        assertTrue(content.contains("sources: src/"));
     }
 
     @Test
@@ -94,12 +182,12 @@ class SkillDirectoryManagerTest {
 
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
-        assertTrue(content.contains("metadata:\n  sources: none"));
+        assertTrue(content.contains("sources: none"));
         assertTrue(!content.contains("src/"));
     }
 
     @Test
-    void materializeSkillStripsExistingMetadataBlockFromSidecar() throws IOException {
+    void materializeSkillOverwritesManagedMetadataKeysButRetainsOthers() throws IOException {
         Path sidecar = tempDir.resolve("sidecar.zip");
         writeZipWithEntries(sidecar, "SKILL.md",
                 "---\nname: original\ndescription: test\nmetadata:\n  author: upstream\n  version: \"1.0\"\n---\n\n# Body\n");
@@ -113,10 +201,14 @@ class SkillDirectoryManagerTest {
 
         assertNotNull(entry);
         String content = Files.readString(entry.entrypointPath());
-        // upstream metadata block stripped; only resolver-injected metadata survives
-        assertTrue(!content.contains("author: upstream"));
+        // non-managed upstream metadata key survives untouched
+        assertTrue(content.contains("author: upstream"));
+        // managed keys ("version" clashes with GAV version) are resolver-authoritative
         assertTrue(!content.contains("version: \"1.0\""));
-        assertTrue(content.contains("metadata:\n  sources: none"));
+        assertTrue(content.contains("group: com.example"));
+        assertTrue(content.contains("artifact: demo"));
+        assertTrue(content.contains("version: 1.0.0"));
+        assertTrue(content.contains("sources: none"));
     }
 
     @Test
@@ -159,6 +251,16 @@ class SkillDirectoryManagerTest {
         assertTrue(Files.exists(activeDir));
         assertTrue(Files.notExists(staleManaged));
         assertTrue(Files.exists(manual));
+    }
+
+    private static String expectedGeneratedPrefix(ModuleCoordinate coordinate) {
+        return "Reference documentation for the Java library `" + coordinate.group() + ":" + coordinate.artifact()
+                + "` (Maven, resolved version " + coordinate.version()
+                + "). Use this skill when writing, reviewing, or debugging code that depends on it.";
+    }
+
+    private static String yamlQuoteExpected(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static void writeZipWithEntries(Path zipPath, String entryName, String content) throws IOException {
