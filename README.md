@@ -17,9 +17,11 @@ either `classpath[:path]` (docs embedded in the same jar) or `maven[:group:artif
 off each direct dependency's own resolved jar and, only when present, extracts the docs
 into project-local skill folders under `.agents/skills/`.
 
-Note: this repository currently covers regular Maven/JAR dependencies only. Agent docs
-for Gradle plugins (applied via the `plugins {}` block) is a deferred, not-yet-implemented
-extension of the same convention.
+This also covers Gradle plugins applied via the `plugins {}` block, not just regular
+Maven/JAR dependencies: since a plugin jar isn't resolved onto a dependency configuration,
+the resolver finds it via the plugin's own classloader instead, and only the `classpath`
+distribution is supported (Gradle plugins aren't resolved as Maven dependencies, so a
+sidecar has no consumer-side resolution path).
 
 ## Quickstart
 
@@ -80,10 +82,10 @@ This repository uses the Axion Release plugin to derive a single repo-wide versi
 ## Modules
 
 - [`agent-docs-publish-gradle-plugin`](./agent-docs-publish-gradle-plugin/README.md) - validates and distributes a library's agent docs, embedded in its own jar or as a sidecar zip.
-- [`agent-docs-resolve-gradle-plugin`](./agent-docs-resolve-gradle-plugin/README.md) - discovers and extracts agent docs for a consuming project's dependencies into local skill folders.
+- [`agent-docs-resolve-gradle-plugin`](./agent-docs-resolve-gradle-plugin/README.md) - discovers and extracts agent docs for a consuming project's dependencies and applied Gradle plugins into local skill folders.
 - `agent-docs-integration-tests` - end-to-end TestKit tests that run both plugins together.
 
-See each module's own README for its full behavior, extension options, and output layout. Agent docs for Gradle plugins (applied via `plugins {}`, not depended on directly) is a deferred extension of this same convention — not yet implemented.
+See each module's own README for its full behavior, extension options, and output layout.
 
 ## License
 
