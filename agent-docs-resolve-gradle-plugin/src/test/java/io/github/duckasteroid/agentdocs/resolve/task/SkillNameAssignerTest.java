@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import java.util.List;
 import java.util.Map;
 
+import io.github.duckasteroid.agentdocs.resolve.task.model.GradlePluginCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
+import io.github.duckasteroid.agentdocs.resolve.task.model.SkillSource;
 import org.junit.jupiter.api.Test;
 
 class SkillNameAssignerTest {
@@ -67,5 +69,27 @@ class SkillNameAssignerTest {
         assertEquals(v1.skillName(), assigned.get(v1));
         assertEquals(v2.skillName(), assigned.get(v2));
         assertNotEquals(assigned.get(v1), assigned.get(v2));
+    }
+
+    @Test
+    void dependencyAndPluginShareOneCollisionNamespace() {
+        ModuleCoordinate dependency = new ModuleCoordinate("com.example", "publish", "1.0.0");
+        GradlePluginCoordinate plugin = new GradlePluginCoordinate("io.github.duckasteroid.agent-docs.publish");
+
+        Map<SkillSource, String> assigned = SkillNameAssigner.assign(List.of(dependency, plugin));
+
+        assertEquals("com-example-publish", assigned.get(dependency));
+        assertEquals("io-github-duckasteroid-agent-docs-publish", assigned.get(plugin));
+    }
+
+    @Test
+    void nonCollidingDependencyAndPluginBothStayAtShortTier() {
+        ModuleCoordinate dependency = new ModuleCoordinate("com.example", "widget", "1.0.0");
+        GradlePluginCoordinate plugin = new GradlePluginCoordinate("io.github.duckasteroid.agent-docs.publish");
+
+        Map<SkillSource, String> assigned = SkillNameAssigner.assign(List.of(dependency, plugin));
+
+        assertEquals("widget", assigned.get(dependency));
+        assertEquals("publish", assigned.get(plugin));
     }
 }

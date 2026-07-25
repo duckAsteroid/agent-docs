@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.duckasteroid.agentdocs.resolve.task.model.GradlePluginCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.SkillEntry;
 import java.io.IOException;
@@ -251,6 +252,31 @@ class SkillDirectoryManagerTest {
         assertTrue(Files.exists(activeDir));
         assertTrue(Files.notExists(staleManaged));
         assertTrue(Files.exists(manual));
+    }
+
+    @Test
+    void materializeSkillForGradlePluginRecordsPluginIdMetadataAndDescription() throws IOException {
+        Path sidecar = tempDir.resolve("sidecar.zip");
+        writeZipWithEntries(sidecar, "SKILL.md", "---\nname: original\ndescription: test\n---\n\n# Body\n");
+        Path skillsRoot = tempDir.resolve("skills");
+
+        SkillDirectoryManager manager =
+                new SkillDirectoryManager(ProjectBuilder.builder().build().getLogger());
+        GradlePluginCoordinate coordinate = new GradlePluginCoordinate("io.github.duckasteroid.agent-docs.publish");
+
+        SkillEntry entry = manager.materializeSkill(coordinate, coordinate.skillName(), sidecar, skillsRoot, false, null);
+
+        assertNotNull(entry);
+        String content = Files.readString(entry.entrypointPath());
+        assertTrue(content.contains("name: " + coordinate.skillName()));
+        assertTrue(content.contains("metadata:"));
+        assertTrue(content.contains("pluginId: io.github.duckasteroid.agent-docs.publish"));
+        assertTrue(!content.contains("group:"));
+        String expectedLine = "description: " + yamlQuoteExpected(
+                "Reference documentation for the Gradle plugin `io.github.duckasteroid.agent-docs.publish`. "
+                        + "Use this skill when configuring, writing, or troubleshooting Gradle builds that apply it. test");
+        assertTrue(content.lines().anyMatch(expectedLine::equals),
+                "Expected description line [" + expectedLine + "] in:\n" + content);
     }
 
     private static String expectedGeneratedPrefix(ModuleCoordinate coordinate) {

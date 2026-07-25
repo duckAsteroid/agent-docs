@@ -12,18 +12,22 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import io.github.duckasteroid.agentdocs.resolve.task.model.GradlePluginCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.SkillEntry;
+import io.github.duckasteroid.agentdocs.resolve.task.model.SkillSource;
 import org.gradle.api.logging.Logger;
 
 /**
- * Manages extracted dependency skill directories and stale managed-folder cleanup.
+ * Manages extracted skill directories (from dependencies or Gradle plugins) and stale
+ * managed-folder cleanup.
  */
 final class SkillDirectoryManager {
     private static final String SKILL_ENTRYPOINT_FILENAME = "SKILL.md";
     private static final String OWNERSHIP_MARKER_FILENAME = ".agent-docs";
     private static final String SOURCES_SUBDIRECTORY = "assets/sources/";
-    private static final Set<String> MANAGED_METADATA_KEYS = Set.of("group", "artifact", "version", "sources");
+    private static final Set<String> MANAGED_METADATA_KEYS =
+            Set.of("group", "artifact", "version", "pluginId", "sources");
 
     private final Logger logger;
 
@@ -48,7 +52,7 @@ final class SkillDirectoryManager {
      * field: {@code assets/sources/} when sources were unpacked, {@code none} when the sources
      * jar was unavailable.
      *
-     * @param coordinate dependency coordinate
+     * @param source dependency or plugin identity
      * @param sidecarPath resolved sidecar archive
      * @param skillsRoot root managed skills directory
      * @param includeSources whether to unpack sources and annotate the skill
@@ -57,22 +61,22 @@ final class SkillDirectoryManager {
      * @throws IOException when extraction or rewrite operations fail
      */
     SkillEntry materializeSkill(
-            ModuleCoordinate coordinate,
+            SkillSource source,
             String skillName,
             Path sidecarPath,
             Path skillsRoot,
             boolean includeSources,
             Path sourcesPath) throws IOException {
-        return materialize(coordinate, skillName, skillsRoot, includeSources, sourcesPath,
+        return materialize(source, skillName, skillsRoot, includeSources, sourcesPath,
                 destination -> extractZip(destination, sidecarPath));
     }
 
     /**
-     * Extracts a subtree embedded within a dependency's own jar (the {@code classpath}
-     * distribution) into the managed skill directory and returns the entry.
+     * Extracts a subtree embedded within a dependency's or Gradle plugin's own jar (the
+     * {@code classpath} distribution) into the managed skill directory and returns the entry.
      *
-     * @param coordinate dependency coordinate
-     * @param archivePath the dependency's own resolved jar
+     * @param source dependency or plugin identity
+     * @param archivePath the dependency's or plugin's own resolved jar
      * @param embeddedPathPrefix path, within {@code archivePath}, to the root of the docs bundle
      * @param skillsRoot root managed skills directory
      * @param includeSources whether to unpack sources and annotate the skill
@@ -81,14 +85,14 @@ final class SkillDirectoryManager {
      * @throws IOException when extraction or rewrite operations fail
      */
     SkillEntry materializeSkillFromEmbeddedArchive(
-            ModuleCoordinate coordinate,
+            SkillSource source,
             String skillName,
             Path archivePath,
             String embeddedPathPrefix,
             Path skillsRoot,
             boolean includeSources,
             Path sourcesPath) throws IOException {
-        return materialize(coordinate, skillName, skillsRoot, includeSources, sourcesPath,
+        return materialize(source, skillName, skillsRoot, includeSources, sourcesPath,
                 destination -> extractZip(destination, archivePath, embeddedPathPrefix));
     }
 
@@ -97,7 +101,7 @@ final class SkillDirectoryManager {
     }
 
     private SkillEntry materialize(
-            ModuleCoordinate coordinate,
+            SkillSource source,
             String skillName,
             Path skillsRoot,
             boolean includeSources,
@@ -115,21 +119,21 @@ final class SkillDirectoryManager {
             if (sourcesPath != null) {
                 extractZip(destination.resolve(SOURCES_SUBDIRECTORY), sourcesPath);
                 sourcesMetadataValue = SOURCES_SUBDIRECTORY;
-                logger.info("Extracted sources for {} into {}", coordinate.gav(), destination.resolve(SOURCES_SUBDIRECTORY));
+                logger.info("Extracted sources for {} into {}", source.describe(), destination.resolve(SOURCES_SUBDIRECTORY));
             } else {
                 sourcesMetadataValue = "none";
-                logger.info("No sources jar found for {}", coordinate.gav());
+                logger.info("No sources jar found for {}", source.describe());
             }
         }
 
         Path entrypoint = findEntrypoint(destination);
         if (entrypoint == null) {
-            logger.warn("Resolved agent docs for {} but could not locate SKILL.md entrypoint", coordinate.gav());
+            logger.warn("Resolved agent docs for {} but could not locate SKILL.md entrypoint", source.describe());
             return null;
         }
 
-        rewriteEntrypointFrontmatter(entrypoint, skillName, coordinate, sourcesMetadataValue);
-        return new SkillEntry(coordinate, entrypoint, skillName);
+        rewriteEntrypointFrontmatter(entrypoint, skillName, source, sourcesMetadataValue);
+        return new SkillEntry(source, entrypoint, skillName);
     }
 
     /**
@@ -249,22 +253,27 @@ final class SkillDirectoryManager {
      * unrelated {@code metadata} entries — is preserved untouched.
      *
      * @param entrypoint path to the extracted SKILL.md
-     * @param skillName canonical skill name derived from GAV coordinates
-     * @param coordinate resolved dependency coordinate
+     * @param skillName canonical skill name derived from the source identity
+     * @param source resolved dependency or plugin identity
      * @param sourcesMetadataValue {@code "assets/sources/"} when sources were extracted,
      *     {@code "none"} when sources were requested but unavailable, or {@code null} when
      *     sources were not requested
      * @throws IOException when reading or writing the file fails
      */
     private void rewriteEntrypointFrontmatter(
-            Path entrypoint, String skillName, ModuleCoordinate coordinate, String sourcesMetadataValue) throws IOException {
+            Path entrypoint, String skillName, SkillSource source, String sourcesMetadataValue) throws IOException {
         String normalized = Files.readString(entrypoint).replace("\r\n", "\n");
         String rewritten;
 
         List<String> metadataLines = new ArrayList<>();
-        metadataLines.add("  group: " + coordinate.group());
-        metadataLines.add("  artifact: " + coordinate.artifact());
-        metadataLines.add("  version: " + coordinate.version());
+        switch (source) {
+            case ModuleCoordinate mc -> {
+                metadataLines.add("  group: " + mc.group());
+                metadataLines.add("  artifact: " + mc.artifact());
+                metadataLines.add("  version: " + mc.version());
+            }
+            case GradlePluginCoordinate pc -> metadataLines.add("  pluginId: " + pc.pluginId());
+        }
         if (sourcesMetadataValue != null) {
             metadataLines.add("  sources: " + sourcesMetadataValue);
         }
@@ -279,7 +288,7 @@ final class SkillDirectoryManager {
 
                 List<String> topLevel = new ArrayList<>();
                 topLevel.add("name: " + skillName);
-                topLevel.add("description: " + yamlQuote(buildDescription(coordinate, fields.description())));
+                topLevel.add("description: " + yamlQuote(buildDescription(source, fields.description())));
                 topLevel.addAll(fields.otherTopLevelLines());
                 topLevel.add("metadata:");
                 topLevel.addAll(metadataLines);
@@ -291,7 +300,7 @@ final class SkillDirectoryManager {
         } else {
             List<String> topLevel = new ArrayList<>();
             topLevel.add("name: " + skillName);
-            topLevel.add("description: " + yamlQuote(buildDescription(coordinate, null)));
+            topLevel.add("description: " + yamlQuote(buildDescription(source, null)));
             topLevel.add("metadata:");
             topLevel.addAll(metadataLines);
             rewritten = "---\n" + String.join("\n", topLevel) + "\n---\n\n" + normalized;
@@ -301,14 +310,18 @@ final class SkillDirectoryManager {
     }
 
     /**
-     * Builds the resolver-generated skill description: a Java/Maven-specific sentence identifying
-     * the library this skill documents, followed by the upstream author's own description (if
+     * Builds the resolver-generated skill description: a sentence identifying the dependency or
+     * Gradle plugin this skill documents, followed by the upstream author's own description (if
      * any) — matching the core convention's "generated prefix, author description appended" rule.
      */
-    private static String buildDescription(ModuleCoordinate coordinate, String upstreamDescription) {
-        String prefix = "Reference documentation for the Java library `" + coordinate.group() + ":"
-                + coordinate.artifact() + "` (Maven, resolved version " + coordinate.version()
-                + "). Use this skill when writing, reviewing, or debugging code that depends on it.";
+    private static String buildDescription(SkillSource source, String upstreamDescription) {
+        String prefix = switch (source) {
+            case ModuleCoordinate mc -> "Reference documentation for the Java library `" + mc.group() + ":"
+                    + mc.artifact() + "` (Maven, resolved version " + mc.version()
+                    + "). Use this skill when writing, reviewing, or debugging code that depends on it.";
+            case GradlePluginCoordinate pc -> "Reference documentation for the Gradle plugin `" + pc.pluginId()
+                    + "`. Use this skill when configuring, writing, or troubleshooting Gradle builds that apply it.";
+        };
         if (upstreamDescription == null || upstreamDescription.isBlank()) {
             return prefix;
         }

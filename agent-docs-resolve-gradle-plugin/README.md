@@ -1,6 +1,6 @@
 # Agent Docs Resolve Plugin
 
-This plugin reads the `Agent-Docs` manifest attribute (see [`specification/core-conventions.md`](../specification/core-conventions.md) and [`specification/java-conventions.md`](../specification/java-conventions.md) at the repo root) from direct dependencies' own resolved jars, and extracts their agent docs for local agent use.
+This plugin reads the `Agent-Docs` manifest attribute (see [`specification/core-conventions.md`](../specification/core-conventions.md) and [`specification/java-conventions.md`](../specification/java-conventions.md) at the repo root) from direct dependencies' own resolved jars — and from the jars of Gradle plugins applied via `plugins {}` — and extracts their agent docs for local agent use.
 
 ## What It Does
 
@@ -15,7 +15,15 @@ This plugin reads the `Agent-Docs` manifest attribute (see [`specification/core-
 - Writes an ownership marker file at `.agents/skills/<skill-name>/.agent-docs`.
 - Removes stale, marker-owned dependency skill folders when those dependencies are no longer in the project.
 
-Note: this plugin currently only discovers agent docs for regular dependencies on the configured classpath — it does not yet discover docs for Gradle plugins applied via the `plugins {}` block. That support is deferred.
+### Gradle plugins applied via `plugins {}`
+
+The plugin also discovers agent docs for Gradle plugins applied via the `plugins {}` block — not just regular dependencies. Since a plugin jar isn't resolved onto a project dependency configuration the way a regular dependency is, there's no Maven GAV to read off it; instead, each applied plugin's own class reveals the jar it was loaded from via its classloader, and that jar is inspected exactly like a dependency's jar would be:
+
+- Only the `classpath` scheme is meaningful for plugins (the only distribution mode `agent-docs.publish` supports for `java-gradle-plugin` projects — see that plugin's README). A plugin jar declaring `maven` is skipped with a warning, since there's no consumer-side resolution path for a sidecar here.
+- The plugin id itself — recovered from the same jar's `META-INF/gradle-plugins/<id>.properties` descriptor (the standard mechanism `java-gradle-plugin` generates and Gradle itself uses to resolve `id '...'` to an implementation class) — stands in for the GAV a regular dependency would have. If a jar carries an `Agent-Docs` declaration but no matching descriptor can be found, it's skipped with an info-level log (not a warning), since it isn't actionable by the consumer.
+- The skill name is derived from the plugin id the same way a dependency's is derived from its GAV: the last dotted segment alone (e.g. `publish` from `io.github.duckasteroid.agent-docs.publish`) when that doesn't collide with anything else resolved in the same run, escalating to the full, normalized plugin id otherwise. Dependency- and plugin-sourced candidates share one collision-detection pass, since both land in the same skills directory.
+- The rewritten frontmatter records `metadata.pluginId` instead of `metadata.group`/`metadata.artifact`/`metadata.version`, and the generated `description` prefix identifies it as a Gradle plugin rather than a Java library (see "Description prefix" below).
+- `includeSources` has no effect for plugin-sourced skills (there's no Maven coordinate to resolve a `sources` jar from) — `metadata.sources: none` is recorded when the flag is enabled, same as an unavailable sources jar for a regular dependency.
 
 When `includeSources` is enabled, the plugin additionally:
 
@@ -25,12 +33,19 @@ When `includeSources` is enabled, the plugin additionally:
 
 ## Description prefix
 
-Every extracted skill's `description` is prefixed with a generated, Java/Maven-specific sentence
-identifying the library, e.g.:
+Every extracted skill's `description` is prefixed with a generated sentence identifying what it
+documents. For a regular dependency, that's a Java/Maven-specific sentence:
 
 ```
 Reference documentation for the Java library `com.example:demo` (Maven, resolved version 1.0.0).
 Use this skill when writing, reviewing, or debugging code that depends on it.
+```
+
+For a Gradle plugin applied via `plugins {}`, it instead reads:
+
+```
+Reference documentation for the Gradle plugin `com.example.sample-plugin`. Use this skill when
+configuring, writing, or troubleshooting Gradle builds that apply it.
 ```
 
 If the upstream `SKILL.md` already had a `description`, it's appended after this generated prefix
@@ -40,12 +55,14 @@ scalar so any colons or quotes in either half stay valid.
 
 ## Skill naming
 
-Each resolved dependency is assigned the shortest name that stays unique within a single
-`resolveAgentDocs` run, escalating through tiers only when needed:
+Each resolved dependency or applied plugin is assigned the shortest name that stays unique within
+a single `resolveAgentDocs` run, escalating through tiers only when needed. Dependencies and
+plugins share one collision-detection pass, since both land in the same skills directory.
 
-1. **Artifact name alone** (e.g. `core`) — used whenever no other dependency in the same run
-   shares that artifact name. This is the common case: most consumers have few, if any,
-   artifact-name clashes across their dependencies.
+For dependencies:
+
+1. **Artifact name alone** (e.g. `core`) — used whenever no other dependency or plugin in the same
+   run shares that name. This is the common case: most consumers have few, if any, name clashes.
 2. **`group-artifact`** (e.g. `com-acme-core`) — used only for dependencies whose plain artifact
    name collides with another one in the same run.
 3. **`group-artifact-version`** (the full GAV) — used only if `group-artifact` also collides
@@ -53,11 +70,20 @@ Each resolved dependency is assigned the shortest name that stays unique within 
    unreachable in practice, since a single resolved configuration only ever selects one version
    per `group:artifact`, but is kept as a defensive final tier.
 
+For Gradle plugins:
+
+1. **The plugin id's last dotted segment** (e.g. `publish` from `io.github.duckasteroid.agent-docs.publish`)
+   — used whenever it doesn't collide with anything else resolved in the same run.
+2. **The full, normalized plugin id** (e.g. `io-github-duckasteroid-agent-docs-publish`) — used
+   only on a collision at the first tier. Since plugin ids are already globally unique, this tier
+   is effectively unique on its own, so there's no further "version" tier the way a dependency has.
+
 At every tier, the candidate name is lowercased, restricted to `[a-z0-9-]` (other characters
 become `-`, repeats collapse, leading/trailing hyphens are stripped), and — only if it would
 still exceed 64 characters — truncated and given a deterministic SHA-256 hash suffix so it stays
-reproducible. This logic lives in `ModuleCoordinate` (the per-tier candidate keys) and
-`SkillNameAssigner` (the collision detection across a run).
+reproducible. This logic lives in `ModuleCoordinate`/`GradlePluginCoordinate` (the per-tier
+candidate keys, both implementing the shared `SkillSource` contract) and `SkillNameAssigner` (the
+collision detection across a run).
 
 ## Extension Configuration
 
@@ -110,3 +136,17 @@ code is available, on top of that:
 | `assets/sources/` | Sources extracted — read from that subdirectory                |
 | `none`            | Sources were requested but unavailable in the repository       |
 | absent            | `includeSources` was not enabled when this skill was extracted |
+
+For a Gradle plugin discovered via `plugins {}`, the layout is the same but the frontmatter
+carries `metadata.pluginId` instead of GAV fields, and `metadata.sources` (when `includeSources`
+is enabled) is always `none`:
+
+```text
+.agents/skills/
+  <skill-name>/
+    SKILL.md          ← metadata.pluginId: <plugin id>
+    references/
+    assets/
+    scripts/
+    .agent-docs
+```

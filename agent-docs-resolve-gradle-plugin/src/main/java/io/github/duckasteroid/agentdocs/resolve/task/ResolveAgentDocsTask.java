@@ -2,12 +2,16 @@ package io.github.duckasteroid.agentdocs.resolve.task;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.github.duckasteroid.agentdocs.resolve.task.model.GradlePluginCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
 import io.github.duckasteroid.agentdocs.resolve.task.model.SkillEntry;
+import io.github.duckasteroid.agentdocs.resolve.task.model.SkillSource;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.provider.ListProperty;
@@ -20,20 +24,28 @@ import org.gradle.work.DisableCachingByDefault;
 
 /**
  * Resolves {@code Agent-Docs} manifest declarations (per {@code specification/java-conventions.md})
- * for direct dependencies on the configured classpath, extracts docs into dependency-scoped
- * directories in the local project skills tree, marks managed folders with {@code .agent-docs},
- * and removes stale marker-owned dependency folders.
+ * for direct dependencies on the configured classpath and for Gradle plugins applied via
+ * {@code plugins {}}, extracts docs into scoped directories in the local project skills tree,
+ * marks managed folders with {@code .agent-docs}, and removes stale marker-owned folders.
  *
  * <p>Only dependencies whose resolved jar carries an {@code Agent-Docs} manifest attribute are
  * considered — dependencies without it are skipped with no further resolution attempt of any
  * kind. A {@code classpath} declaration is extracted directly from the dependency's own jar; a
  * {@code maven} declaration is resolved as a separate {@code agent-docs} sidecar zip.
  *
+ * <p>Applied plugins are discovered separately (see {@link AppliedPluginCollector}), since they
+ * aren't resolved onto a project {@code Configuration} the way regular dependencies are. Only the
+ * {@code classpath} scheme is meaningful there — a plugin jar declaring {@code maven} is skipped
+ * with a warning, since it has no consumer-side resolution path. Dependency- and plugin-sourced
+ * candidates share a single skill-name collision-detection pass (see {@code SkillNameAssigner}),
+ * since both land in the same skills directory.
+ *
  * <p>When {@link #getIncludeSources()} is {@code true}, the task also resolves the {@code sources}
  * classifier jar for each declared dependency and unpacks it into a {@code src/} subdirectory of
  * the skill folder. The extracted {@code SKILL.md} frontmatter records {@code metadata.sources:
  * src/} when sources are available, or {@code metadata.sources: none} when the artifact has no
- * sources jar.
+ * sources jar. Plugin-sourced skills always record {@code metadata.sources: none} when sources are
+ * requested, since there's no Maven coordinate to resolve a {@code sources} jar from.
  */
 @DisableCachingByDefault(because = "Resolver task performs filesystem orchestration not yet modeled for cache reuse")
 public abstract class ResolveAgentDocsTask extends DefaultTask {
@@ -91,6 +103,35 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     public abstract MapProperty<String, String> getResolvedSidecarPaths();
 
     /**
+     * Plugin ids of Gradle plugins applied via {@code plugins {}} whose own jar carries a
+     * {@code classpath}-scheme {@code Agent-Docs} manifest attribute — precomputed during task
+     * configuration by {@link AppliedPluginCollector}. Plugins without the attribute, or declaring
+     * an unsupported scheme, are not included here at all.
+     *
+     * @return declared plugin ids
+     */
+    @Input
+    public abstract ListProperty<String> getPluginIds();
+
+    /**
+     * For each id in {@link #getPluginIds()}, the absolute path of that plugin's own resolved jar
+     * (found via its classloader) to extract from.
+     *
+     * @return plugin-id-to-jar-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getPluginJarPaths();
+
+    /**
+     * For each id in {@link #getPluginIds()}, the path within the jar (from
+     * {@link #getPluginJarPaths()}) to the root of the docs bundle.
+     *
+     * @return plugin-id-to-embedded-path mapping
+     */
+    @Input
+    public abstract MapProperty<String, String> getPluginClasspathPrefixes();
+
+    /**
      * When {@code true}, the task also resolves and extracts the {@code sources} classifier jar
      * for each dependency with an agent-docs declaration.
      *
@@ -118,15 +159,15 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
     public abstract DirectoryProperty getSkillsDirectory();
 
     /**
-     * Extracts docs for each declared dependency into managed skill directories, prunes stale
-     * managed folders.
+     * Extracts docs for each declared dependency and applied plugin into managed skill
+     * directories, prunes stale managed folders.
      *
      * @throws IOException when filesystem operations fail
      */
     @TaskAction
     void resolveAgentDocs() throws IOException {
         Path skillsRoot = getSkillsDirectory().get().getAsFile().toPath();
-        Set<ModuleCoordinate> candidates = new LinkedHashSet<>();
+        Set<ModuleCoordinate> dependencyCandidates = new LinkedHashSet<>();
         int invalidCoordinates = 0;
         for (String coordinate : getDependencyCoordinates().get()) {
             String[] segments = coordinate.split(":", 3);
@@ -134,13 +175,21 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
                 invalidCoordinates++;
                 continue;
             }
-            candidates.add(new ModuleCoordinate(segments[0], segments[1], segments[2]));
+            dependencyCandidates.add(new ModuleCoordinate(segments[0], segments[1], segments[2]));
         }
+
+        Set<GradlePluginCoordinate> pluginCandidates = new LinkedHashSet<>();
+        for (String pluginId : getPluginIds().get()) {
+            pluginCandidates.add(new GradlePluginCoordinate(pluginId));
+        }
+
         getLogger().info(
-                "Resolving agent-docs from {} declared coordinates ({} valid, {} invalid) into {}",
+                "Resolving agent-docs from {} declared dependency coordinates ({} valid, {} invalid) and {} "
+                        + "applied plugins into {}",
                 getDependencyCoordinates().get().size(),
-                candidates.size(),
+                dependencyCandidates.size(),
                 invalidCoordinates,
+                pluginCandidates.size(),
                 skillsRoot);
 
         Set<SkillEntry> skillEntries = new LinkedHashSet<>();
@@ -153,9 +202,15 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
         Map<String, String> classpathPrefixes = getClasspathPrefixes().get();
         Map<String, String> resolvedSidecars = getResolvedSidecarPaths().get();
         Map<String, String> resolvedSources = getResolvedSourcePaths().get();
-        Map<ModuleCoordinate, String> skillNames = SkillNameAssigner.assign(candidates);
+        Map<String, String> pluginJarPaths = getPluginJarPaths().get();
+        Map<String, String> pluginClasspathPrefixes = getPluginClasspathPrefixes().get();
 
-        for (ModuleCoordinate coordinate : candidates) {
+        List<SkillSource> allCandidates = new ArrayList<>(dependencyCandidates.size() + pluginCandidates.size());
+        allCandidates.addAll(dependencyCandidates);
+        allCandidates.addAll(pluginCandidates);
+        Map<SkillSource, String> skillNames = SkillNameAssigner.assign(allCandidates);
+
+        for (ModuleCoordinate coordinate : dependencyCandidates) {
             String scheme = schemes.get(coordinate.gav());
             String skillName = skillNames.get(coordinate);
             getLogger().debug("Materializing agent-docs for {} ({}) as {}", coordinate.gav(), scheme, skillName);
@@ -197,10 +252,29 @@ public abstract class ResolveAgentDocsTask extends DefaultTask {
             skillsMaterialized++;
         }
 
+        for (GradlePluginCoordinate pluginCoordinate : pluginCandidates) {
+            String skillName = skillNames.get(pluginCoordinate);
+            String jarPathValue = pluginJarPaths.get(pluginCoordinate.pluginId());
+            String prefix = pluginClasspathPrefixes.get(pluginCoordinate.pluginId());
+            if (jarPathValue == null) {
+                continue;
+            }
+            getLogger().debug("Materializing agent-docs for plugin {} as {}", pluginCoordinate.pluginId(), skillName);
+
+            SkillEntry entry = skillDirectoryManager.materializeSkillFromEmbeddedArchive(
+                    pluginCoordinate, skillName, Path.of(jarPathValue), prefix, skillsRoot, includeSources, null);
+            if (entry == null) {
+                continue;
+            }
+            skillEntries.add(entry);
+            skillsMaterialized++;
+        }
+
         skillDirectoryManager.cleanupStaleManagedSkillDirectories(skillEntries, skillsRoot);
         getLogger().lifecycle(
-                "resolveAgentDocs: inspected {} dependencies, materialized {} skills",
-                candidates.size(),
+                "resolveAgentDocs: inspected {} dependencies and {} plugins, materialized {} skills",
+                dependencyCandidates.size(),
+                pluginCandidates.size(),
                 skillsMaterialized);
     }
 }

@@ -1,16 +1,9 @@
 package io.github.duckasteroid.agentdocs.resolve.task.model;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Locale;
-
 /**
  * Represents a Maven GAV coordinate for a library/dependency.
  */
-public record ModuleCoordinate(String group, String artifact, String version) {
-    private static final int MAX_SKILL_NAME_LENGTH = 64;
-    private static final int HASH_SUFFIX_LENGTH = 10;
+public record ModuleCoordinate(String group, String artifact, String version) implements SkillSource {
     private static final String FALLBACK_SKILL_NAME = "dep";
 
     /**
@@ -20,6 +13,14 @@ public record ModuleCoordinate(String group, String artifact, String version) {
      */
     public String gav() {
         return group + ":" + artifact + ":" + version;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public String describe() {
+        return gav();
     }
 
     /**
@@ -33,8 +34,9 @@ public record ModuleCoordinate(String group, String artifact, String version) {
      *
      * @return normalized skill folder name
      */
+    @Override
     public String skillName() {
-        return finalizeSkillName(normalizeSkillName(group + "-" + artifact + "-" + version));
+        return finalizeSkillName(SkillNameNormalization.normalize(group + "-" + artifact + "-" + version, FALLBACK_SKILL_NAME));
     }
 
     /**
@@ -45,8 +47,9 @@ public record ModuleCoordinate(String group, String artifact, String version) {
      *
      * @return normalized artifact-only candidate key
      */
+    @Override
     public String artifactNameKey() {
-        return normalizeSkillName(artifact);
+        return SkillNameNormalization.normalize(artifact, FALLBACK_SKILL_NAME);
     }
 
     /**
@@ -57,8 +60,9 @@ public record ModuleCoordinate(String group, String artifact, String version) {
      *
      * @return normalized group-artifact candidate key
      */
+    @Override
     public String groupArtifactNameKey() {
-        return normalizeSkillName(group + "-" + artifact);
+        return SkillNameNormalization.normalize(group + "-" + artifact, FALLBACK_SKILL_NAME);
     }
 
     /**
@@ -69,40 +73,8 @@ public record ModuleCoordinate(String group, String artifact, String version) {
      * @param normalizedKey a normalized candidate key
      * @return skill-folder-compatible name, truncated with a hash suffix if needed
      */
+    @Override
     public String finalizeSkillName(String normalizedKey) {
-        if (normalizedKey.length() <= MAX_SKILL_NAME_LENGTH) {
-            return normalizedKey;
-        }
-
-        String hash = sha256Hex(gav()).substring(0, HASH_SUFFIX_LENGTH);
-        int prefixLength = MAX_SKILL_NAME_LENGTH - HASH_SUFFIX_LENGTH - 1;
-        String prefix = normalizedKey.substring(0, prefixLength).replaceAll("-+$", "");
-        if (prefix.isEmpty()) {
-            prefix = FALLBACK_SKILL_NAME;
-        }
-        return normalizeSkillName(prefix + "-" + hash);
-    }
-
-    private static String normalizeSkillName(String raw) {
-        String normalized = raw.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9-]", "-")
-                .replaceAll("-{2,}", "-")
-                .replaceAll("^-+", "")
-                .replaceAll("-+$", "");
-        return normalized.isEmpty() ? FALLBACK_SKILL_NAME : normalized;
-    }
-
-    private static String sha256Hex(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                builder.append(String.format("%02x", b));
-            }
-            return builder.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is not available", exception);
-        }
+        return SkillNameNormalization.finalizeSkillName(normalizedKey, gav(), FALLBACK_SKILL_NAME);
     }
 }

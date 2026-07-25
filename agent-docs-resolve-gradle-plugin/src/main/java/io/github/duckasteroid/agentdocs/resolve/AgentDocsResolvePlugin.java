@@ -12,6 +12,7 @@ import java.util.Optional;
 
 import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsDeclaration;
 import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsManifestReader;
+import io.github.duckasteroid.agentdocs.resolve.task.AppliedPluginCollector;
 import io.github.duckasteroid.agentdocs.resolve.task.InstallAgentDocsSkillTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolvedDependencyCollector;
@@ -33,14 +34,24 @@ import org.gradle.api.artifacts.result.ResolvedArtifactResult;
  * from that same jar; a {@code maven} declaration is resolved as a separate {@code agent-docs}
  * sidecar zip.
  *
+ * <p>Gradle plugins applied via {@code plugins {}} are discovered separately (see
+ * {@link AppliedPluginCollector}), since they aren't resolved onto a project dependency
+ * configuration the way regular dependencies are — instead, each applied plugin's own class
+ * reveals the jar it was loaded from via its classloader. Only the {@code classpath} scheme is
+ * meaningful for plugins (a {@code maven} declaration is skipped with a warning, since it has no
+ * consumer-side resolution path), and the plugin id — recovered from that same jar's
+ * {@code META-INF/gradle-plugins/} descriptors — stands in for the GAV a regular dependency would
+ * have.
+ *
  * <p>When {@code agentDocs.includeSources} is {@code true}, the task also resolves the {@code
  * sources} classifier jar for each declared dependency and unpacks it into a {@code src/}
  * subdirectory of the skill folder. The extracted {@code SKILL.md} frontmatter records {@code
  * metadata.sources: src/} when sources are available, or {@code metadata.sources: none} when the
- * sources jar is absent from the repository.
+ * sources jar is absent from the repository (always {@code none} for plugin-sourced skills, since
+ * there's no Maven coordinate to resolve a sources jar from).
  *
- * <p>The task is intentionally configured to run on every invocation so dependency and
- * skill-folder clean-up stays current as dependencies change.
+ * <p>The task is intentionally configured to run on every invocation so dependency, plugin, and
+ * skill-folder clean-up stays current as dependencies and applied plugins change.
  */
 public class AgentDocsResolvePlugin implements Plugin<Project> {
     @Override
@@ -131,6 +142,28 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
                             }
                         });
                 return resolvedSidecars;
+            }));
+
+            var declaredPlugins = project.provider(
+                    () -> AppliedPluginCollector.collect(project.getPlugins(), project.getLogger()));
+
+            task.getPluginIds().set(
+                    declaredPlugins.map(declarations -> declarations.stream()
+                            .map(d -> d.coordinate().pluginId())
+                            .toList()));
+
+            task.getPluginJarPaths().set(declaredPlugins.map(declarations -> {
+                Map<String, String> jarPaths = new LinkedHashMap<>();
+                declarations.forEach(d -> jarPaths.put(d.coordinate().pluginId(), d.jarPath().toAbsolutePath().toString()));
+                return jarPaths;
+            }));
+
+            task.getPluginClasspathPrefixes().set(declaredPlugins.map(declarations -> {
+                Map<String, String> prefixes = new LinkedHashMap<>();
+                declarations.forEach(d -> prefixes.put(
+                        d.coordinate().pluginId(),
+                        d.declaration().payload() != null ? d.declaration().payload() : AgentDocsDeclaration.DEFAULT_CLASSPATH_PATH));
+                return prefixes;
             }));
 
             task.getIncludeSources().set(extension.getIncludeSources());
