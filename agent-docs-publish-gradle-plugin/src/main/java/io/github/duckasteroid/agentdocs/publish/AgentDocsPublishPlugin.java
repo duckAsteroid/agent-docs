@@ -53,11 +53,31 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
         AgentDocsPublishExtension extension =
-                project.getExtensions().create("agentDocs", AgentDocsPublishExtension.class);
+                project.getExtensions().create("agentDocsPublish", AgentDocsPublishExtension.class);
 
         extension.getDocsDirectory().convention(project.getLayout().getProjectDirectory().dir("src/agent-docs"));
         extension.getDisabledValidationRules().convention(Set.of());
         extension.getDistribution().convention(AgentDocsDistribution.SIDECAR);
+
+        // Historically this extension was named "agentDocs", which collides with the resolve
+        // plugin's own "agentDocs" extension when both plugins are applied to the same project
+        // (see duckAsteroid/agent-docs#3). Registered eagerly, not deferred to afterEvaluate, so an
+        // inline "agentDocs { ... }" block later in the *same* build script still resolves -
+        // Gradle applies every plugin in the plugins {} block, in declared order, before any
+        // subsequent script line runs, so whichever of these two plugins applies first wins the
+        // name. If the resolve plugin (io.github.duckasteroid.agent-docs) has already applied and
+        // claimed "agentDocs" for itself, skip the alias entirely and require "agentDocsPublish {}"
+        // instead. If the resolve plugin applies afterwards, it detects this alias and fails the
+        // build with guidance to reorder the plugins {} block or switch to "agentDocsPublish {}",
+        // rather than surfacing Gradle's raw "extension already registered" error - see
+        // AgentDocsResolvePlugin.
+        if (project.getExtensions().findByName("agentDocs") == null) {
+            project.getLogger().warn(
+                    "The 'agentDocs {}' extension block in project '" + project.getPath() + "' is deprecated for "
+                            + "io.github.duckasteroid.agent-docs.publish and will be removed in a future release; "
+                            + "use 'agentDocsPublish {}' instead.");
+            project.getExtensions().add(AgentDocsPublishExtension.class, "agentDocs", extension);
+        }
 
         // Gradle plugin jars aren't resolved as Maven dependencies the way regular libraries are
         // (they're applied via the plugins {} DSL and resolved through the plugin portal/
@@ -71,7 +91,7 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             project.afterEvaluate(ignoredProject -> {
                 if (extension.getDistribution().get() == AgentDocsDistribution.SIDECAR) {
                     throw new GradleException(
-                            "agentDocs.distribution = SIDECAR is not supported in project '" + project.getPath()
+                            "agentDocsPublish.distribution = SIDECAR is not supported in project '" + project.getPath()
                                     + "' because the java-gradle-plugin plugin is applied: Gradle plugins aren't "
                                     + "resolved as Maven dependencies, so a sidecar agent-docs archive would have "
                                     + "no consumer-side resolution path. Remove the distribution override (EMBEDDED "

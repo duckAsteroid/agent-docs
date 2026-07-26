@@ -123,7 +123,7 @@ class AgentDocsPublishPluginTest {
                     id 'io.github.duckasteroid.agent-docs.publish'
                 }
 
-                agentDocs {
+                agentDocsPublish {
                     docsDirectory = layout.projectDirectory.dir('docs/agent-docs')
                 }
                 """);
@@ -146,6 +146,37 @@ class AgentDocsPublishPluginTest {
             assertNotNull(skillFile, "Expected SKILL.md entrypoint in archive");
             assertNotNull(customFile, "Expected custom docs file in archive");
         }
+    }
+
+    @Test
+    void deprecatedAgentDocsAliasStillConfiguresPublishExtensionWhenResolvePluginIsNotApplied() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                agentDocs {
+                    docsDirectory = layout.projectDirectory.dir('docs/agent-docs')
+                }
+                """);
+        writeFile(projectDir.resolve("docs/agent-docs/SKILL.md"),
+                skillFrontmatter("agent-docs", "Configured via the deprecated agentDocs alias."));
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("packageAgentDocs")
+                .build();
+
+        assertNotNull(result.task(":packageAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":packageAgentDocs").getOutcome());
+        assertTrue(result.getOutput().contains("'agentDocs {}' extension block"),
+                "Expected a deprecation warning for the legacy agentDocs {} block");
+        assertTrue(result.getOutput().contains("agentDocsPublish {}"),
+                "Expected the deprecation warning to point consumers at agentDocsPublish {}");
+
+        Path archivePath = projectDir.resolve("build/agent-docs/sample-lib-agent-docs.zip");
+        assertTrue(Files.exists(archivePath), "Expected archive built from the docs directory configured via the alias");
     }
 
     @Test
@@ -414,7 +445,7 @@ class AgentDocsPublishPluginTest {
                 group = 'com.example'
                 version = '1.2.3'
 
-                agentDocs {
+                agentDocsPublish {
                   distribution = 'EMBEDDED'
                 }
                 """);
@@ -706,7 +737,7 @@ class AgentDocsPublishPluginTest {
                 group = 'com.example'
                 version = '1.2.3'
 
-                agentDocs {
+                agentDocsPublish {
                     distribution = 'SIDECAR'
                 }
 
@@ -735,7 +766,7 @@ class AgentDocsPublishPluginTest {
                 .withArguments("jar", "packageAgentDocs")
                 .buildAndFail();
 
-        assertTrue(result.getOutput().contains("agentDocs.distribution = SIDECAR is not supported"),
+        assertTrue(result.getOutput().contains("agentDocsPublish.distribution = SIDECAR is not supported"),
                 "Expected build to fail fast on SIDECAR override in a java-gradle-plugin project");
     }
 
