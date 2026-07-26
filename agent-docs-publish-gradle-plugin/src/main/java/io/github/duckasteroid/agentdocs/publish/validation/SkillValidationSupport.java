@@ -46,8 +46,14 @@ final class SkillValidationSupport {
     /**
      * Parses {@code SKILL.md} frontmatter and returns known fields.
      *
+     * <p>Per the Agent Docs convention, frontmatter is optional on the publisher's source
+     * {@code SKILL.md} — the resolver generates it at extraction time — so a file with no {@code
+     * ---} block at all yields an empty result rather than an error. A file that opens a
+     * frontmatter block but never closes it is genuinely malformed (the resolver would silently
+     * fail to rewrite it), so that case still throws.
+     *
      * @param context validation context
-     * @return parsed frontmatter fields
+     * @return parsed frontmatter fields, all {@code null} when no frontmatter block is present
      */
     static SkillFrontmatter parseFrontmatter(ValidationContext context) {
         File skillEntrypoint = singleSkillEntrypoint(context)
@@ -63,7 +69,7 @@ final class SkillValidationSupport {
 
         String normalized = content.replace("\r\n", "\n");
         if (!normalized.startsWith("---\n")) {
-            throw new GradleException("SKILL.md must start with YAML frontmatter delimited by --- in: " + context.docsDirectory());
+            return new SkillFrontmatter(null, null);
         }
 
         int closingIndex = normalized.indexOf("\n---\n", 4);
@@ -93,6 +99,6 @@ final class SkillValidationSupport {
             fields.put(key, value);
         }
 
-        return new SkillFrontmatter(fields.get("name"), fields.get("description"), fields.get("compatibility"));
+        return new SkillFrontmatter(fields.get("name"), fields.get("description"));
     }
 }
