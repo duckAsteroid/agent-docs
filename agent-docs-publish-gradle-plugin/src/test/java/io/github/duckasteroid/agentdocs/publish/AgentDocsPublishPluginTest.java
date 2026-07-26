@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -589,7 +590,8 @@ class AgentDocsPublishPluginTest {
                     public void apply(Project project) {}
                 }
                 """);
-        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), skillFrontmatter("agent-docs", "Sample plugin docs."));
+        writeFile(projectDir.resolve("src/agent-docs/com.example.sample/SKILL.md"),
+                skillFrontmatter("agent-docs", "Sample plugin docs."));
 
         BuildResult result = gradleRunner(projectDir)
                 .withArguments("jar", "packageAgentDocs")
@@ -602,8 +604,215 @@ class AgentDocsPublishPluginTest {
         assertTrue(Files.exists(jarPath), "Expected main jar to be built");
         try (JarFile jarFile = new JarFile(jarPath.toFile())) {
             assertEquals("classpath", jarFile.getManifest().getMainAttributes().getValue("Agent-Docs"));
-            assertNotNull(jarFile.getEntry("agent-docs/SKILL.md"), "Expected embedded SKILL.md inside jar");
+            assertNotNull(jarFile.getEntry("agent-docs/com.example.sample/SKILL.md"),
+                    "Expected embedded SKILL.md inside jar under its plugin id subdirectory");
         }
+    }
+
+    @Test
+    void javaGradlePluginProjectEmbedsOneBundlePerDeclaredPluginId() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'multi-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        first {
+                            id = 'com.example.first'
+                            implementationClass = 'com.example.FirstPlugin'
+                        }
+                        second {
+                            id = 'com.example.second'
+                            implementationClass = 'com.example.SecondPlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/FirstPlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class FirstPlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SecondPlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SecondPlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.first/SKILL.md"),
+                skillFrontmatter("ignored-name", "First plugin docs."));
+        writeFile(projectDir.resolve("src/agent-docs/com.example.second/SKILL.md"),
+                skillFrontmatter("ignored-name", "Second plugin docs."));
+
+        BuildResult result = gradleRunner(projectDir).withArguments("jar").build();
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":jar").getOutcome());
+
+        Path jarPath = projectDir.resolve("build/libs/multi-plugin-1.0.0.jar");
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            assertEquals("classpath", jarFile.getManifest().getMainAttributes().getValue("Agent-Docs"));
+            JarEntry firstEntry = jarFile.getJarEntry("agent-docs/com.example.first/SKILL.md");
+            JarEntry secondEntry = jarFile.getJarEntry("agent-docs/com.example.second/SKILL.md");
+            assertNotNull(firstEntry, "Expected embedded SKILL.md for first declared plugin id");
+            assertNotNull(secondEntry, "Expected embedded SKILL.md for second declared plugin id");
+
+            String firstContent = readZipEntry(jarFile, firstEntry);
+            assertTrue(!firstContent.contains("\nname:"), "Expected frontmatter name stripped from first plugin's SKILL.md");
+            assertTrue(firstContent.contains("First plugin docs."));
+
+            String secondContent = readZipEntry(jarFile, secondEntry);
+            assertTrue(!secondContent.contains("\nname:"), "Expected frontmatter name stripped from second plugin's SKILL.md");
+            assertTrue(secondContent.contains("Second plugin docs."));
+        }
+    }
+
+    @Test
+    void javaGradlePluginProjectFailsValidationWhenAPluginIdBundleIsMissing() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'multi-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        first {
+                            id = 'com.example.first'
+                            implementationClass = 'com.example.FirstPlugin'
+                        }
+                        second {
+                            id = 'com.example.second'
+                            implementationClass = 'com.example.SecondPlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/FirstPlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class FirstPlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SecondPlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SecondPlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.first/SKILL.md"),
+                skillFrontmatter("ignored-name", "First plugin docs."));
+
+        BuildResult result = gradleRunner(projectDir).withArguments("validateAgentDocs").buildAndFail();
+
+        assertTrue(result.getOutput().contains("[plugin-bundle-directories]"));
+        assertTrue(result.getOutput().contains("missing a bundle subdirectory for declared plugin id 'com.example.second'"));
+    }
+
+    @Test
+    void javaGradlePluginProjectFailsValidationOnStrayBundleDirectory() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        sample {
+                            id = 'com.example.sample'
+                            implementationClass = 'com.example.SamplePlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SamplePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SamplePlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.sample/SKILL.md"),
+                skillFrontmatter("ignored-name", "Sample plugin docs."));
+        writeFile(projectDir.resolve("src/agent-docs/com.example.typo/SKILL.md"),
+                skillFrontmatter("ignored-name", "Stray docs that don't match a declared id."));
+
+        BuildResult result = gradleRunner(projectDir).withArguments("validateAgentDocs").buildAndFail();
+
+        assertTrue(result.getOutput().contains("[plugin-bundle-directories]"));
+        assertTrue(result.getOutput().contains("'com.example.typo' that doesn't match any plugin id"));
+    }
+
+    @Test
+    void javaGradlePluginProjectFailsValidationOnTopLevelSkillMd() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-plugin'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        sample {
+                            id = 'com.example.sample'
+                            implementationClass = 'com.example.SamplePlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/SamplePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class SamplePlugin implements Plugin<Project> {
+                    public void apply(Project project) {}
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.sample/SKILL.md"),
+                skillFrontmatter("ignored-name", "Sample plugin docs."));
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"),
+                skillFrontmatter("ignored-name", "Stray top-level entrypoint."));
+
+        BuildResult result = gradleRunner(projectDir).withArguments("validateAgentDocs").buildAndFail();
+
+        assertTrue(result.getOutput().contains("[plugin-bundle-directories]"));
+        assertTrue(result.getOutput().contains("must not contain a top-level SKILL.md"));
     }
 
     @Test

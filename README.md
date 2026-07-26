@@ -21,7 +21,17 @@ This also covers Gradle plugins applied via the `plugins {}` block, not just reg
 Maven/JAR dependencies: since a plugin jar isn't resolved onto a dependency configuration,
 the resolver finds it via the plugin's own classloader instead, and only the `classpath`
 distribution is supported (Gradle plugins aren't resolved as Maven dependencies, so a
-sidecar has no consumer-side resolution path).
+sidecar has no consumer-side resolution path). This only covers **binary plugins**
+(published plugin jars, including convention plugins that apply other binary plugins
+internally) — precompiled script plugins from `buildSrc` or an included `build-logic`
+build are out of scope, since their classes resolve to a local build-output jar that
+was never stamped with an `Agent-Docs` attribute.
+
+A single plugin jar can also carry docs for more than one plugin id (e.g. a shared
+conventions plugin registering several `gradlePlugin { plugins { ... } }` entries): the
+publish plugin always lays these out one bundle per id, at `agent-docs/<pluginId>/`
+inside the jar, and the resolver only materializes a skill for ids the consumer actually
+applies — a declared-but-unused id in the same jar is left alone.
 
 ## Quickstart
 
