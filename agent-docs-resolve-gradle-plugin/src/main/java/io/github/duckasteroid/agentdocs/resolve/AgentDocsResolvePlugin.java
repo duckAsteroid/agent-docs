@@ -1,8 +1,5 @@
 package io.github.duckasteroid.agentdocs.resolve;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -13,7 +10,6 @@ import java.util.Optional;
 import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsDeclaration;
 import io.github.duckasteroid.agentdocs.resolve.task.AgentDocsManifestReader;
 import io.github.duckasteroid.agentdocs.resolve.task.AppliedPluginCollector;
-import io.github.duckasteroid.agentdocs.resolve.task.InstallAgentDocsSkillTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolvedDependencyCollector;
 import io.github.duckasteroid.agentdocs.resolve.task.SidecarArtifactResolver;
@@ -201,15 +197,6 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
 
             task.getSkillsDirectory().set(extension.getSkillsDirectory());
         });
-
-        String skillContent = loadSkillResource();
-        project.getTasks().register("installAgentDocsResolveSkill", InstallAgentDocsSkillTask.class, task -> {
-            task.setGroup("agent docs");
-            task.setDescription("Installs the agent-docs resolve plugin usage guide into the local agent skills folder.");
-            task.getSkillContent().set(skillContent);
-            task.getOutputFile().convention(
-                    extension.getSkillsDirectory().file("agent-docs-resolve/SKILL.md"));
-        });
     }
 
     /**
@@ -228,17 +215,6 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
             return declared.coordinate;
         }
         return new ModuleCoordinate(segments[0], segments[1], segments[2]);
-    }
-
-    private static String loadSkillResource() {
-        try (InputStream is = AgentDocsResolvePlugin.class.getResourceAsStream("SKILL.md")) {
-            if (is == null) {
-                throw new IllegalStateException("Bundled SKILL.md resource not found in plugin jar");
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to read bundled SKILL.md resource", e);
-        }
     }
 
     private record DeclaredDependency(ModuleCoordinate coordinate, Path jarPath, AgentDocsDeclaration declaration) {
