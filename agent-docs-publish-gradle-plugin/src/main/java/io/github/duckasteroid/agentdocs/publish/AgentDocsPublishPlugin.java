@@ -24,6 +24,8 @@ import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.bundling.Zip;
 import org.gradle.api.publish.PublishingExtension;
 import org.gradle.api.publish.maven.MavenPublication;
+import org.gradle.plugin.devel.GradlePluginDevelopmentExtension;
+import org.gradle.plugin.devel.PluginDeclaration;
 
 /**
  * Registers publish-side tasks that validate and package docs into an {@code agent-docs} sidecar zip.
@@ -38,6 +40,14 @@ import org.gradle.api.publish.maven.MavenPublication;
  *
  * <p>When {@code maven-publish} is present, the packaged archive is attached to every
  * {@link MavenPublication} with classifier {@code agent-docs}.
+ *
+ * <p>For {@code java-gradle-plugin} projects, the docs directory is always treated as a parent of
+ * one bundle subdirectory per id declared via {@code gradlePlugin { plugins { ... } } } - never a
+ * single bundle in its own right, even when only one id is declared - so that a jar registering
+ * several plugin ids can carry a distinct agent docs bundle per id
+ * ({@code agent-docs/<pluginId>/SKILL.md}) rather than being limited to one. This is scoped to
+ * binary Gradle plugins only; see {@code AppliedPluginCollector} on the resolve side for how each
+ * applied plugin's own bundle is discovered from a jar that may declare several.
  */
 public class AgentDocsPublishPlugin implements Plugin<Project> {
     private static final String EMBEDDED_RESOURCE_ROOT = "agent-docs";
@@ -74,6 +84,22 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             });
         });
 
+        // Lazily read at task-execution time rather than eagerly here: the gradlePlugin { plugins
+        // { ... } } DSL block that populates GradlePluginDevelopmentExtension typically runs after
+        // this plugin's apply(), later in the same build script.
+        Provider<Set<String>> declaredPluginIds = project.provider(() -> {
+            GradlePluginDevelopmentExtension pluginDevelopment =
+                    project.getExtensions().findByType(GradlePluginDevelopmentExtension.class);
+            if (pluginDevelopment == null) {
+                return Set.of();
+            }
+            Set<String> ids = new LinkedHashSet<>();
+            for (PluginDeclaration declaration : pluginDevelopment.getPlugins()) {
+                ids.add(declaration.getId());
+            }
+            return ids;
+        });
+
         Provider<Set<String>> disabledRulesFromProperties = project.getProviders()
                 .gradleProperty("agentDocs.disabledValidationRules")
                 .orElse(project.getProviders().systemProperty("agentDocs.disabledValidationRules"))
@@ -87,6 +113,7 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             task.getDocsDirectory().set(extension.getDocsDirectory());
             task.getDisabledValidationRules().set(extension.getDisabledValidationRules());
             task.getDisabledValidationRules().addAll(disabledRulesFromProperties);
+            task.getDeclaredPluginIds().set(declaredPluginIds);
         });
 
         TaskProvider<Zip> packageAgentDocs = project.getTasks().register("packageAgentDocs", Zip.class, task -> {
@@ -97,7 +124,9 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             task.getDestinationDirectory().set(project.getLayout().getBuildDirectory().dir("agent-docs"));
             task.dependsOn(validateAgentDocs);
             task.onlyIf(ignored -> extension.getDistribution().get() == AgentDocsDistribution.SIDECAR);
-            task.doFirst(ignored -> writeProcessedSkillEntrypoint(
+            // SIDECAR is unavailable for java-gradle-plugin projects (fails fast above), so this
+            // docs directory is always a single bundle here - never the multi plugin-id layout.
+            task.doFirst(ignored -> processEntrypoint(
                     extension.getDocsDirectory().get().getAsFile(), task.getTemporaryDir()));
             task.from(extension.getDocsDirectory(), spec -> spec.eachFile(fileCopyDetails -> {
                 boolean isRootFile = fileCopyDetails.getRelativePath().getSegments().length == 1;
@@ -114,21 +143,24 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             task.setDescription("Copies agent docs into a resource tree embedded in the built jar.");
             task.dependsOn(validateAgentDocs);
             task.onlyIf(ignored -> extension.getDistribution().get() == AgentDocsDistribution.EMBEDDED);
-            task.doFirst(ignored -> writeProcessedSkillEntrypoint(
-                    extension.getDocsDirectory().get().getAsFile(), task.getTemporaryDir()));
+            task.doFirst(ignored -> processEntrypoints(
+                    extension.getDocsDirectory().get().getAsFile(), task.getTemporaryDir(), declaredPluginIds.get()));
             task.into(project.getLayout().getBuildDirectory().dir("agent-docs/embedded"));
-            // Deliberately not excluding the raw SKILL.md here (unlike packageAgentDocs' Zip task):
+            // Deliberately not excluding the raw SKILL.md(s) here (unlike packageAgentDocs' Zip task):
             // Copy's getSource() is @SkipWhenEmpty, and that check runs before doFirst populates the
             // temporary dir, so when docsDirectory contains nothing but SKILL.md, excluding it would
             // make the merged source look empty and the whole task - including doFirst - would be
-            // skipped as NO-SOURCE, silently embedding nothing. Copying the raw SKILL.md keeps the
-            // source always non-empty (validateAgentDocs already guarantees it exists); the processed
-            // copy from the temp dir is added after and overwrites it at the same destination path -
-            // duplicatesStrategy.INCLUDE is required for Copy to allow that overwrite instead of
-            // failing on the intentional duplicate relative path.
+            // skipped as NO-SOURCE, silently embedding nothing. Copying the raw SKILL.md(s) keeps the
+            // source always non-empty (validateAgentDocs already guarantees they exist); the processed
+            // copies from the temp dir are added after and overwrite them at the same destination
+            // paths - duplicatesStrategy.INCLUDE is required for Copy to allow that overwrite instead
+            // of failing on the intentional duplicate relative paths. "*/SKILL.md" additionally
+            // matches each plugin's own entrypoint under agent-docs/<pluginId>/ for java-gradle-plugin
+            // projects (see class javadoc); it's simply unmatched, and harmless, otherwise.
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
             task.from(extension.getDocsDirectory(), spec -> spec.into(EMBEDDED_RESOURCE_ROOT));
-            task.from(task.getTemporaryDir(), spec -> spec.into(EMBEDDED_RESOURCE_ROOT).include("SKILL.md"));
+            task.from(task.getTemporaryDir(),
+                    spec -> spec.into(EMBEDDED_RESOURCE_ROOT).include("SKILL.md", "*/SKILL.md"));
         });
 
         project.getTasks().matching(task -> task.getName().equals("assemble")).configureEach(task -> task.dependsOn(packageAgentDocs));
@@ -184,7 +216,21 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
         }
     }
 
-    private static void writeProcessedSkillEntrypoint(File docsDirectory, File destinationDir) {
+    /**
+     * Processes the entrypoint for every declared plugin's own bundle subdirectory, or the docs
+     * directory's own entrypoint when {@code pluginIds} is empty (not a Gradle plugin project).
+     */
+    private static void processEntrypoints(File docsDirectory, File destinationDir, Set<String> pluginIds) {
+        if (pluginIds.isEmpty()) {
+            processEntrypoint(docsDirectory, destinationDir);
+            return;
+        }
+        for (String pluginId : pluginIds) {
+            processEntrypoint(new File(docsDirectory, pluginId), new File(destinationDir, pluginId));
+        }
+    }
+
+    private static void processEntrypoint(File docsDirectory, File destinationDir) {
         File sourceEntrypoint = Arrays.stream(docsDirectory.listFiles(file -> file.isFile() && file.getName().equalsIgnoreCase("skill.md")))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Unable to locate SKILL.md in docs directory: " + docsDirectory));
