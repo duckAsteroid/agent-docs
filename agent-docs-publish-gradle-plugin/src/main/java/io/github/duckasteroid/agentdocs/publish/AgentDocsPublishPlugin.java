@@ -2,8 +2,6 @@ package io.github.duckasteroid.agentdocs.publish;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -59,8 +57,6 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
 
         extension.getDocsDirectory().convention(project.getLayout().getProjectDirectory().dir("src/agent-docs"));
         extension.getDisabledValidationRules().convention(Set.of());
-        extension.getSkillsDirectory().convention(
-                project.getRootProject().getLayout().getProjectDirectory().dir(".agents/skills"));
         extension.getDistribution().convention(AgentDocsDistribution.SIDECAR);
 
         // Gradle plugin jars aren't resolved as Maven dependencies the way regular libraries are
@@ -194,26 +190,6 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
             String agentDocsValue = mode == AgentDocsDistribution.EMBEDDED ? "classpath" : "maven:" + coordinates;
             jarTask.getManifest().attributes(Map.of("Agent-Docs", agentDocsValue));
         });
-
-        String skillContent = loadSkillResource();
-        project.getTasks().register("installAgentDocsPublishSkill", InstallAgentDocsSkillTask.class, task -> {
-            task.setGroup("agent docs");
-            task.setDescription("Installs the agent-docs publish plugin usage guide into the local agent skills folder.");
-            task.getSkillContent().set(skillContent);
-            task.getOutputFile().convention(
-                    extension.getSkillsDirectory().file("agent-docs-publish/SKILL.md"));
-        });
-    }
-
-    private static String loadSkillResource() {
-        try (InputStream is = AgentDocsPublishPlugin.class.getResourceAsStream("SKILL.md")) {
-            if (is == null) {
-                throw new IllegalStateException("Bundled SKILL.md resource not found in plugin jar");
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to read bundled SKILL.md resource", e);
-        }
     }
 
     /**
