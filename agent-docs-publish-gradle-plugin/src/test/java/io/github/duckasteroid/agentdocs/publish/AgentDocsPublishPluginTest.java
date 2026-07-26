@@ -342,7 +342,7 @@ class AgentDocsPublishPluginTest {
     }
 
     @Test
-    void packageAgentDocsFailsWhenSkillFrontmatterIsMissing() throws IOException {
+    void packageAgentDocsSucceedsWhenSkillFrontmatterIsEntirelyAbsent() throws IOException {
         writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {
@@ -354,9 +354,32 @@ class AgentDocsPublishPluginTest {
 
         BuildResult result = gradleRunner(projectDir)
                 .withArguments("packageAgentDocs")
+                .build();
+
+        assertTrue(result.task(":packageAgentDocs").getOutcome() == TaskOutcome.SUCCESS);
+    }
+
+    @Test
+    void packageAgentDocsFailsWhenSkillFrontmatterIsOpenedButNeverClosed() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), "rootProject.name = 'sample-lib'\n");
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), """
+                ---
+                description: Unclosed frontmatter.
+
+                # Skill
+                """);
+
+        BuildResult result = gradleRunner(projectDir)
+                .withArguments("packageAgentDocs")
                 .buildAndFail();
 
-        assertTrue(result.getOutput().contains("must start with YAML frontmatter"));
+        assertTrue(result.getOutput().contains("must end with a closing --- delimiter"));
     }
 
     @Test

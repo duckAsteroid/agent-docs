@@ -38,30 +38,38 @@ class ValidateAgentDocsTaskTest {
     void validateAgentDocsAggregatesMultipleRuleFailures() throws IOException {
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), """
                 ---
-                compatibility: %s
+                description: %s
                 ---
 
                 # Skill
-                """.formatted("x".repeat(501)));
+                """.formatted("x".repeat(701)));
         writeFile(projectDir.resolve("src/agent-docs/assets"), "not-a-directory");
 
         ValidateAgentDocsTask task = createTask(projectDir);
 
         GradleException exception = assertThrows(GradleException.class, task::validateAgentDocs);
         assertTrue(exception.getMessage().contains("[skill-description]"));
-        assertTrue(exception.getMessage().contains("[skill-compatibility]"));
         assertTrue(exception.getMessage().contains("[standard-directories]"));
+    }
+
+    @Test
+    void validateAgentDocsAcceptsSkillWithNoFrontmatterAtAll() throws IOException {
+        writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), "# Skill\n\nPlain markdown, no frontmatter.\n");
+
+        ValidateAgentDocsTask task = createTask(projectDir);
+
+        assertDoesNotThrow(task::validateAgentDocs);
     }
 
     @Test
     void validateAgentDocsAppliesDisabledRulesDuringIntegration() throws IOException {
         writeFile(projectDir.resolve("src/agent-docs/SKILL.md"), """
                 ---
-                compatibility: local-only
+                description: %s
                 ---
 
                 # Skill
-                """);
+                """.formatted("x".repeat(701)));
 
         ValidateAgentDocsTask task = createTask(projectDir);
         task.getDisabledValidationRules().add("skill-description");

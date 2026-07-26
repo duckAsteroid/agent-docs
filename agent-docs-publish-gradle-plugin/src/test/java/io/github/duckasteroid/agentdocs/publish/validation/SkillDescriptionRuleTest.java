@@ -14,18 +14,25 @@ class SkillDescriptionRuleTest {
     Path tempDir;
 
     @Test
-    void returnsFailureWhenDescriptionIsMissing() throws IOException {
+    void returnsPassWhenDescriptionIsMissingFromFrontmatter() throws IOException {
         writeFile(tempDir.resolve("SKILL.md"), """
                 ---
-                compatibility: local-only
+                name: ignored
                 ---
                 """);
 
         ValidationResult result = new SkillDescriptionRule().validate(new ValidationContext(tempDir.toFile()));
 
-        assertTrue(result.severity().isPresent());
-        assertTrue(result.severity().get() == ValidationSeverity.ERROR);
-        assertTrue(result.details().getFirst().contains("must define a non-empty 'description' field"));
+        assertTrue(result.severity().isEmpty());
+    }
+
+    @Test
+    void returnsPassWhenFrontmatterIsEntirelyAbsent() throws IOException {
+        writeFile(tempDir.resolve("SKILL.md"), "# No frontmatter at all");
+
+        ValidationResult result = new SkillDescriptionRule().validate(new ValidationContext(tempDir.toFile()));
+
+        assertTrue(result.severity().isEmpty());
     }
 
     @Test
@@ -34,13 +41,13 @@ class SkillDescriptionRuleTest {
                 ---
                 description: %s
                 ---
-                """.formatted("x".repeat(1025)));
+                """.formatted("x".repeat(701)));
 
         ValidationResult result = new SkillDescriptionRule().validate(new ValidationContext(tempDir.toFile()));
 
         assertTrue(result.severity().isPresent());
         assertTrue(result.severity().get() == ValidationSeverity.ERROR);
-        assertTrue(result.details().getFirst().contains("'description' must be <= 1024"));
+        assertTrue(result.details().getFirst().contains("'description' must be <= 700"));
     }
 
     @Test
