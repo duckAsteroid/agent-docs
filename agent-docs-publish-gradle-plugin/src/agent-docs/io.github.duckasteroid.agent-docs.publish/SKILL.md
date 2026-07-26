@@ -11,7 +11,7 @@ Apply this plugin to a library or Gradle plugin project to validate and distribu
 This plugin isn't required to participate in the convention — the manifest attribute and docs
 layout can be hand-written by anyone — but it automates validation and packaging.
 
-Distribution is controlled by `agentDocs.distribution`:
+Distribution is controlled by `agentDocsPublish.distribution`:
 
 - **`SIDECAR`** (default) — packages the docs into a separate zip artifact (classifier
   `agent-docs`), attached to every `MavenPublication` when `maven-publish` is applied, and stamps
@@ -59,12 +59,17 @@ GAV/plugin-id coordinates at extraction time.
 ## Extension
 
 ```groovy
-agentDocs {
+agentDocsPublish {
   docsDirectory = file('src/agent-docs')          // default
   disabledValidationRules = []                     // optional; list of rule IDs to skip
   distribution = AgentDocsDistribution.SIDECAR     // default; forced to EMBEDDED under java-gradle-plugin
 }
 ```
+
+Renamed from `agentDocs` in 2.2.0 to avoid colliding with `io.github.duckasteroid.agent-docs`
+(resolve)'s own `agentDocs` extension when both plugins are applied to the same project. The old
+`agentDocs { ... }` name still works as a deprecated alias when only this plugin is applied; use
+`agentDocsPublish { ... }` if you also apply the resolve plugin.
 
 Disable rules from the CLI: `./gradlew validateAgentDocs -PagentDocs.disabledValidationRules=skill-name,skill-compatibility`
 

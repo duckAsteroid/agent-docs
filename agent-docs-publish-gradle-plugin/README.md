@@ -21,9 +21,19 @@ The plugin contract is intentionally minimal:
 - Emits a warning when `name` is present and omits that field from the packaged `SKILL.md`.
 - Stamps the project's `jar` task manifest with the `Agent-Docs` attribute (see below).
 
+### Extension name
+
+Configuration lives under the `agentDocsPublish { ... }` extension (renamed from `agentDocs` in
+2.2.0 so it no longer collides with `agent-docs-resolve-gradle-plugin`'s own `agentDocs` extension
+when both plugins are applied to the same project — see
+[duckAsteroid/agent-docs#3](https://github.com/duckAsteroid/agent-docs/issues/3)). The old
+`agentDocs { ... }` name still works as a deprecated alias when only this plugin is applied, but if
+you also apply `io.github.duckasteroid.agent-docs`, use `agentDocsPublish { ... }` for this
+plugin's configuration.
+
 ### Distribution modes
 
-Controlled by `agentDocs.distribution` (default `SIDECAR`):
+Controlled by `agentDocsPublish.distribution` (default `SIDECAR`):
 
 - **`SIDECAR`** (default) — packages docs into `build/agent-docs/<project-name>-agent-docs.zip` (full docs root contents at the zip root); if `maven-publish` is applied, attaches it to every `MavenPublication` with classifier `agent-docs`; stamps the main jar's manifest with `Agent-Docs: maven:<group>:<artifact>:<version>`.
 - **`EMBEDDED`** — copies docs into the project's own jar under `agent-docs/`, with no separate artifact published; stamps the main jar's manifest with `Agent-Docs: classpath`.
@@ -172,7 +182,7 @@ The plugin defaults to:
 `validateAgentDocs` runs a composite set of rule classes. You can skip specific rules:
 
 ```groovy
-agentDocs {
+agentDocsPublish {
   disabledValidationRules = ['skill-name', 'skill-compatibility']
 }
 ```

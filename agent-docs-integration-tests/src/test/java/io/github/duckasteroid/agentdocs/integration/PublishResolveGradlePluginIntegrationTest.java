@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.jar.JarFile;
 import org.gradle.testkit.runner.BuildResult;
@@ -118,6 +119,166 @@ class PublishResolveGradlePluginIntegrationTest {
                     "Expected no skill materialized for the declared-but-unapplied second plugin id, found: "
                             + skillDirectoryNames);
         }
+    }
+
+    @Test
+    void bothPublishAndResolvePluginsCanBeAppliedTogetherWhenResolveIsDeclaredFirst() throws IOException {
+        // Regression test for duckAsteroid/agent-docs#3: both plugins used to unconditionally
+        // register an "agentDocs" extension, so applying agent-docs.publish and agent-docs
+        // (resolve) to the same project failed with "Cannot add extension with name 'agentDocs'".
+        // Declaring the resolve plugin first means it claims "agentDocs" for itself; the publish
+        // plugin then detects the name is taken and skips its deprecated alias, registering only
+        // "agentDocsPublish".
+        String repoRoot = System.getProperty("agentDocs.repoRoot");
+        assertNotNull(repoRoot, "Expected test system property 'agentDocs.repoRoot' to be set");
+
+        Path projectDir = workspaceDir.resolve("dual-role");
+        writeFile(projectDir.resolve("settings.gradle"), """
+                pluginManagement {
+                    includeBuild('%s')
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+
+                rootProject.name = 'dual-role'
+                """.formatted(escapeForGroovyString(repoRoot)));
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                }
+
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        dual {
+                            id = 'com.example.dual-role'
+                            implementationClass = 'com.example.DualRolePlugin'
+                        }
+                    }
+                }
+
+                agentDocsPublish {
+                    docsDirectory = layout.projectDirectory.dir('src/agent-docs')
+                }
+
+                agentDocs {
+                    includeSources = false
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/DualRolePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class DualRolePlugin implements Plugin<Project> {
+                    public void apply(Project project) {
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.dual-role/SKILL.md"), """
+                ---
+                description: A project that both publishes its own docs and resolves dependency docs.
+                ---
+
+                # Dual role plugin skill
+                """);
+
+        BuildResult result = runGradle(projectDir, "jar", "resolveAgentDocs");
+
+        assertNotNull(result.task(":jar"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":jar").getOutcome());
+        assertNotNull(result.task(":resolveAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
+        assertTrue(!result.getOutput().contains("Cannot add extension"),
+                "Expected no extension name collision between the publish and resolve plugins");
+        assertTrue(!result.getOutput().contains("extension block"),
+                "Expected no deprecated agentDocs {} alias warning when the resolve plugin is declared first");
+    }
+
+    @Test
+    void bothPublishAndResolvePluginsFailWithGuidanceWhenPublishIsDeclaredFirst() throws IOException {
+        // The reverse declaration order can't be made to work transparently: Gradle applies
+        // plugins in declared order, synchronously, before any later script line runs, and
+        // ExtensionContainer offers no way to remove/replace an extension once registered. So when
+        // agent-docs.publish is declared first, it eagerly claims "agentDocs" as its deprecated
+        // alias before the resolve plugin ever applies, and the resolve plugin must fail fast with
+        // actionable guidance rather than surface Gradle's raw "extension already registered"
+        // error.
+        String repoRoot = System.getProperty("agentDocs.repoRoot");
+        assertNotNull(repoRoot, "Expected test system property 'agentDocs.repoRoot' to be set");
+
+        Path projectDir = workspaceDir.resolve("dual-role-wrong-order");
+        writeFile(projectDir.resolve("settings.gradle"), """
+                pluginManagement {
+                    includeBuild('%s')
+                    repositories {
+                        mavenLocal()
+                        gradlePluginPortal()
+                        mavenCentral()
+                    }
+                }
+
+                rootProject.name = 'dual-role-wrong-order'
+                """.formatted(escapeForGroovyString(repoRoot)));
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'java-gradle-plugin'
+                    id 'io.github.duckasteroid.agent-docs.publish'
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+
+                group = 'com.example'
+                version = '1.0.0'
+
+                gradlePlugin {
+                    plugins {
+                        dual {
+                            id = 'com.example.dual-role'
+                            implementationClass = 'com.example.DualRolePlugin'
+                        }
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/main/java/com/example/DualRolePlugin.java"), """
+                package com.example;
+
+                import org.gradle.api.Plugin;
+                import org.gradle.api.Project;
+
+                public class DualRolePlugin implements Plugin<Project> {
+                    public void apply(Project project) {
+                    }
+                }
+                """);
+        writeFile(projectDir.resolve("src/agent-docs/com.example.dual-role/SKILL.md"), """
+                ---
+                description: A project that both publishes its own docs and resolves dependency docs.
+                ---
+
+                # Dual role plugin skill
+                """);
+
+        BuildResult result = GradleRunner.create()
+                .withGradleVersion(testGradleVersion())
+                .withProjectDir(projectDir.toFile())
+                .withArguments("jar", "--stacktrace")
+                .buildAndFail();
+
+        assertTrue(result.getOutput().contains("Cannot apply 'io.github.duckasteroid.agent-docs'"),
+                "Expected a clear failure identifying the resolve plugin as unable to apply");
+        assertTrue(result.getOutput().contains("declare 'io.github.duckasteroid.agent-docs' before "
+                        + "'io.github.duckasteroid.agent-docs.publish'"),
+                "Expected guidance to reorder the plugins {} block");
+        assertTrue(result.getOutput().contains("agentDocsPublish {}"),
+                "Expected guidance pointing at agentDocsPublish {} as the alternative fix");
     }
 
     private void createMultiIdProducerProject(Path projectDir, Path mavenRepo, String repoRoot) throws IOException {
@@ -334,11 +495,13 @@ class PublishResolveGradlePluginIntegrationTest {
                 """);
     }
 
-    private BuildResult runGradle(Path projectDir, String taskName) {
+    private BuildResult runGradle(Path projectDir, String... taskNames) {
+        List<String> arguments = new ArrayList<>(List.of(taskNames));
+        arguments.add("--stacktrace");
         return GradleRunner.create()
                 .withGradleVersion(testGradleVersion())
                 .withProjectDir(projectDir.toFile())
-                .withArguments(taskName, "--stacktrace")
+                .withArguments(arguments)
                 .build();
     }
 
