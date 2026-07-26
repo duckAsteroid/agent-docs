@@ -14,14 +14,28 @@ class SkillFrontmatterStructureRuleTest {
     Path tempDir;
 
     @Test
-    void returnsFailureWhenFrontmatterIsMissing() throws IOException {
+    void returnsPassWhenFrontmatterIsEntirelyAbsent() throws IOException {
         writeFile(tempDir.resolve("SKILL.md"), "# Missing frontmatter");
+
+        ValidationResult result = new SkillFrontmatterStructureRule().validate(new ValidationContext(tempDir.toFile()));
+
+        assertTrue(result.severity().isEmpty());
+    }
+
+    @Test
+    void returnsFailureWhenFrontmatterIsOpenedButNeverClosed() throws IOException {
+        writeFile(tempDir.resolve("SKILL.md"), """
+                ---
+                description: Unclosed frontmatter.
+
+                # Skill
+                """);
 
         ValidationResult result = new SkillFrontmatterStructureRule().validate(new ValidationContext(tempDir.toFile()));
 
         assertTrue(result.severity().isPresent());
         assertTrue(result.severity().get() == ValidationSeverity.ERROR);
-        assertTrue(result.details().getFirst().contains("must start with YAML frontmatter"));
+        assertTrue(result.details().getFirst().contains("must end with a closing --- delimiter"));
     }
 
     @Test

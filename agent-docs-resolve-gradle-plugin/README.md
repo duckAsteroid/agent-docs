@@ -97,6 +97,10 @@ agentDocs {
 }
 ```
 
+If you also apply `io.github.duckasteroid.agent-docs.publish` to the same project, configure that
+plugin via `agentDocsPublish { ... }` instead of `agentDocs { ... }` — see the
+[publish plugin README](../agent-docs-publish-gradle-plugin/README.md#extension-name).
+
 ## Run
 
 ```bash

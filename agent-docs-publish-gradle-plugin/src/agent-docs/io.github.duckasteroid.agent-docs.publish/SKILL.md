@@ -11,7 +11,7 @@ Apply this plugin to a library or Gradle plugin project to validate and distribu
 This plugin isn't required to participate in the convention — the manifest attribute and docs
 layout can be hand-written by anyone — but it automates validation and packaging.
 
-Distribution is controlled by `agentDocs.distribution`:
+Distribution is controlled by `agentDocsPublish.distribution`:
 
 - **`SIDECAR`** (default) — packages the docs into a separate zip artifact (classifier
   `agent-docs`), attached to every `MavenPublication` when `maven-publish` is applied, and stamps
@@ -27,9 +27,9 @@ explicit `SIDECAR` override fails the build at configuration time.
 
 ```text
 src/agent-docs/
-  SKILL.md          ← required; YAML frontmatter with `description`
+  SKILL.md          ← required; frontmatter (and `description`) optional
   references/       ← optional reference docs
-  assets/           ← optional assets
+  assets/           ← optional assets (an `assets/sources` entry is reserved, not allowed)
   scripts/          ← optional scripts
 ```
 
@@ -59,14 +59,19 @@ GAV/plugin-id coordinates at extraction time.
 ## Extension
 
 ```groovy
-agentDocs {
+agentDocsPublish {
   docsDirectory = file('src/agent-docs')          // default
   disabledValidationRules = []                     // optional; list of rule IDs to skip
   distribution = AgentDocsDistribution.SIDECAR     // default; forced to EMBEDDED under java-gradle-plugin
 }
 ```
 
-Disable rules from the CLI: `./gradlew validateAgentDocs -PagentDocs.disabledValidationRules=skill-name,skill-compatibility`
+Renamed from `agentDocs` in 2.2.0 to avoid colliding with `io.github.duckasteroid.agent-docs`
+(resolve)'s own `agentDocs` extension when both plugins are applied to the same project. The old
+`agentDocs { ... }` name still works as a deprecated alias when only this plugin is applied; use
+`agentDocsPublish { ... }` if you also apply the resolve plugin.
+
+Disable rules from the CLI: `./gradlew validateAgentDocs -PagentDocs.disabledValidationRules=skill-name,skill-description`
 
 ## Validation rule IDs
 
@@ -75,8 +80,8 @@ Disable rules from the CLI: `./gradlew validateAgentDocs -PagentDocs.disabledVal
 | `docs-directory-exists` | Docs directory is present |
 | `skill-entrypoint` | Exactly one root-level `SKILL.md` (case-insensitive) |
 | `standard-directories` | `scripts`, `references`, `assets` are directories if present |
-| `skill-frontmatter-structure` | `SKILL.md` opens with valid YAML frontmatter delimiters |
-| `skill-description` | Non-empty `description`, <= 1024 characters |
+| `assets-sources-reserved` | `assets/sources` is absent — that path is reserved for a consumer's `includeSources` output |
+| `skill-frontmatter-structure` | When present, `SKILL.md` frontmatter opened with `---` is properly closed; frontmatter itself is optional |
+| `skill-description` | `description`, when present, is <= 700 characters (leaves headroom for the resolver-generated prefix under the Agent Skills format's 1024-character limit); presence is optional |
 | `skill-name` | Warning-only: publisher `name` is ignored at packaging time |
-| `skill-compatibility` | Optional `compatibility` frontmatter field, <= 500 characters |
 | `plugin-bundle-directories` | For `java-gradle-plugin` projects: one subdirectory per declared id, matching subdirectory per id, no top-level `SKILL.md` |

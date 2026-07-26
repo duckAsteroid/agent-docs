@@ -14,6 +14,7 @@ import io.github.duckasteroid.agentdocs.resolve.task.ResolveAgentDocsTask;
 import io.github.duckasteroid.agentdocs.resolve.task.ResolvedDependencyCollector;
 import io.github.duckasteroid.agentdocs.resolve.task.SidecarArtifactResolver;
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
+import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
@@ -52,6 +53,27 @@ import org.gradle.api.artifacts.result.ResolvedArtifactResult;
 public class AgentDocsResolvePlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
+        // The publish plugin (io.github.duckasteroid.agent-docs.publish) supports a deprecated
+        // "agentDocs {}" alias for backwards compatibility, claimed eagerly if it applies first
+        // in the plugins {} block (see AgentDocsPublishPlugin). Gradle's ExtensionContainer offers
+        // no way to remove/replace an extension once registered, so if that alias already claimed
+        // the name, fail fast here with actionable guidance instead of letting create() below throw
+        // Gradle's generic "extension already registered" error (duckAsteroid/agent-docs#3).
+        Object existingAgentDocsExtension = project.getExtensions().findByName("agentDocs");
+        if (existingAgentDocsExtension != null) {
+            String culprit = existingAgentDocsExtension.getClass().getName().contains("AgentDocsPublishExtension")
+                    ? "io.github.duckasteroid.agent-docs.publish's deprecated 'agentDocs {}' alias, claimed "
+                            + "because that plugin was applied first"
+                    : "something else";
+            throw new GradleException(
+                    "Cannot apply 'io.github.duckasteroid.agent-docs': the 'agentDocs' extension in project '"
+                            + project.getPath() + "' is already registered, by " + culprit + ". If you're applying "
+                            + "both 'io.github.duckasteroid.agent-docs' and 'io.github.duckasteroid.agent-docs.publish' "
+                            + "in this project, either declare 'io.github.duckasteroid.agent-docs' before "
+                            + "'io.github.duckasteroid.agent-docs.publish' in your plugins {} block, or configure the "
+                            + "publish plugin via 'agentDocsPublish {}' instead of the deprecated 'agentDocs {}'.");
+        }
+
         AgentDocsResolveExtension extension =
                 project.getExtensions().create("agentDocs", AgentDocsResolveExtension.class);
 

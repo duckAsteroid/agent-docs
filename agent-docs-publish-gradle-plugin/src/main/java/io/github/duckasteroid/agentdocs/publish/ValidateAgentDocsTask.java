@@ -1,9 +1,9 @@
 package io.github.duckasteroid.agentdocs.publish;
 
 import io.github.duckasteroid.agentdocs.publish.validation.AgentDocsValidationRule;
+import io.github.duckasteroid.agentdocs.publish.validation.AssetsSourcesReservedRule;
 import io.github.duckasteroid.agentdocs.publish.validation.DocsDirectoryExistsRule;
 import io.github.duckasteroid.agentdocs.publish.validation.PluginBundleDirectoriesRule;
-import io.github.duckasteroid.agentdocs.publish.validation.SkillCompatibilityRule;
 import io.github.duckasteroid.agentdocs.publish.validation.SkillDescriptionRule;
 import io.github.duckasteroid.agentdocs.publish.validation.SkillEntrypointRule;
 import io.github.duckasteroid.agentdocs.publish.validation.SkillFrontmatterStructureRule;
@@ -141,9 +141,9 @@ public abstract class ValidateAgentDocsTask extends DefaultTask {
         return List.of(
                 new SkillEntrypointRule(),
                 new StandardDirectoriesRule(),
+                new AssetsSourcesReservedRule(),
                 new SkillFrontmatterStructureRule(),
                 new SkillDescriptionRule(),
-                new SkillNameRule(),
-                new SkillCompatibilityRule());
+                new SkillNameRule());
     }
 }
