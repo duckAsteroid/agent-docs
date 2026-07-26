@@ -30,6 +30,45 @@ Controlled by `agentDocs.distribution` (default `SIDECAR`):
 
 If the `java-gradle-plugin` plugin is applied, `distribution` defaults to `EMBEDDED` instead of `SIDECAR`, and any explicit `SIDECAR` override fails the build at configuration time. Gradle plugins are resolved via the plugin portal/`pluginManagement`, not the compile/runtime classpath, so a sidecar `agent-docs@zip` artifact published alongside a plugin jar has no consumer-side resolution path — embedding is the only mode that works for these projects.
 
+### Gradle plugin projects: one bundle per declared plugin id
+
+When `java-gradle-plugin` is applied, the docs root is **always** treated as a parent of one bundle
+subdirectory per id declared via `gradlePlugin { plugins { ... } }` — never a single bundle in its
+own right, even when only one id is declared:
+
+```text
+src/agent-docs/
+  <pluginId>/
+    SKILL.md
+    references/
+    assets/
+    scripts/
+```
+
+For a jar declaring several plugin ids (a shared "conventions" plugin, for example), each id gets
+its own subdirectory and its own independently valid `SKILL.md`:
+
+```text
+src/agent-docs/
+  com.example.java-conventions/
+    SKILL.md
+  com.example.checkstyle-conventions/
+    SKILL.md
+```
+
+- A top-level `SKILL.md` directly under the docs root is rejected — it must live under its own
+  `<pluginId>/` subdirectory instead.
+- Every declared id must have a matching subdirectory, and every subdirectory must match a declared
+  id — missing or stray subdirectories both fail validation (`plugin-bundle-directories` rule, see
+  below).
+- Each `<pluginId>/` subdirectory is otherwise validated exactly like a normal single-project docs
+  root (its own `SKILL.md` entrypoint, frontmatter, and standard directories).
+- All declared ids' bundles are embedded in the jar regardless of which ones a given consumer
+  actually applies; `agent-docs-resolve-gradle-plugin` is what narrows this down to only the plugin
+  ids a consumer project actually applies — see that plugin's README.
+
+This is scoped to binary plugin jars only (not `buildSrc`/`build-logic` precompiled script plugins).
+
 ## Quick start
 
 Apply the plugin in your library project:
@@ -147,7 +186,8 @@ You can also disable rules from CLI:
 Supported rule IDs:
 
 - `docs-directory-exists` — ensures the configured docs directory is present.
-- `skill-entrypoint` — requires exactly one root-level `SKILL.md` entrypoint (case-insensitive).
+- `plugin-bundle-directories` — for `java-gradle-plugin` projects, ensures the docs root contains exactly one bundle subdirectory per declared plugin id and no top-level `SKILL.md`; a no-op otherwise.
+- `skill-entrypoint` — requires exactly one root-level `SKILL.md` entrypoint (case-insensitive) — evaluated per plugin-id bundle for Gradle plugin projects.
 - `standard-directories` — verifies `scripts`, `references`, and `assets` are directories when present.
 - `skill-frontmatter-structure` — checks that `SKILL.md` starts with valid YAML frontmatter delimiters.
 - `skill-description` — requires a non-empty `description` frontmatter field with valid length.
