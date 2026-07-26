@@ -8,53 +8,59 @@ import java.util.Map;
 import java.util.function.Function;
 
 import io.github.duckasteroid.agentdocs.resolve.task.model.ModuleCoordinate;
+import io.github.duckasteroid.agentdocs.resolve.task.model.SkillSource;
 
 /**
- * Assigns the shortest safe skill-folder name to each coordinate in a resolution run.
+ * Assigns the shortest safe skill-folder name to each source in a resolution run.
  *
- * <p>Prefers just the artifact name; falls back to {@code group-artifact} only for coordinates
- * whose artifact name collides with another coordinate in the same run; falls back to the full
- * {@code group-artifact-version} (see {@link ModuleCoordinate#skillName()}) only for coordinates
- * still colliding at that tier. Most consumers have no artifact-name clashes at all, so the
- * common case is a short, readable, artifact-only name.
+ * <p>Prefers just the artifact name (or, for a Gradle plugin, its id's last dotted segment);
+ * falls back to {@code group-artifact} (or the full plugin id) only for sources whose short name
+ * collides with another source in the same run; falls back to the full, maximally-qualified name
+ * (see {@link SkillSource#skillName()}) only for sources still colliding at that tier. Most
+ * consumers have no name clashes at all, so the common case is a short, readable name.
+ *
+ * <p>Generic over {@link SkillSource} so dependency- ({@link ModuleCoordinate}) and plugin-sourced
+ * candidates can be assigned names in a single pass, sharing one collision-detection namespace
+ * since both land in the same skill-folder directory.
  */
 final class SkillNameAssigner {
     private SkillNameAssigner() {
     }
 
     /**
-     * Assigns a skill name to each coordinate, escalating tiers only for coordinates involved in
-     * a collision at the previous tier.
+     * Assigns a skill name to each source, escalating tiers only for sources involved in a
+     * collision at the previous tier.
      *
-     * @param coordinates candidate coordinates for this resolution run
-     * @return each coordinate mapped to its assigned skill name
+     * @param sources candidate sources for this resolution run
+     * @param <T> the concrete source type
+     * @return each source mapped to its assigned skill name
      */
-    static Map<ModuleCoordinate, String> assign(Collection<ModuleCoordinate> coordinates) {
-        Map<ModuleCoordinate, String> assigned = new LinkedHashMap<>();
+    static <T extends SkillSource> Map<T, String> assign(Collection<T> sources) {
+        Map<T, String> assigned = new LinkedHashMap<>();
 
-        List<ModuleCoordinate> stillUnresolved = assignTier(coordinates, assigned, ModuleCoordinate::artifactNameKey);
-        stillUnresolved = assignTier(stillUnresolved, assigned, ModuleCoordinate::groupArtifactNameKey);
-        for (ModuleCoordinate coordinate : stillUnresolved) {
-            assigned.put(coordinate, coordinate.skillName());
+        List<T> stillUnresolved = assignTier(sources, assigned, SkillSource::artifactNameKey);
+        stillUnresolved = assignTier(stillUnresolved, assigned, SkillSource::groupArtifactNameKey);
+        for (T source : stillUnresolved) {
+            assigned.put(source, source.skillName());
         }
 
         return assigned;
     }
 
-    private static List<ModuleCoordinate> assignTier(
-            Collection<ModuleCoordinate> candidates,
-            Map<ModuleCoordinate, String> assigned,
-            Function<ModuleCoordinate, String> candidateKey) {
-        Map<String, List<ModuleCoordinate>> byKey = new LinkedHashMap<>();
-        for (ModuleCoordinate coordinate : candidates) {
-            byKey.computeIfAbsent(candidateKey.apply(coordinate), key -> new ArrayList<>()).add(coordinate);
+    private static <T extends SkillSource> List<T> assignTier(
+            Collection<T> candidates,
+            Map<T, String> assigned,
+            Function<T, String> candidateKey) {
+        Map<String, List<T>> byKey = new LinkedHashMap<>();
+        for (T source : candidates) {
+            byKey.computeIfAbsent(candidateKey.apply(source), key -> new ArrayList<>()).add(source);
         }
 
-        List<ModuleCoordinate> collisions = new ArrayList<>();
-        for (Map.Entry<String, List<ModuleCoordinate>> entry : byKey.entrySet()) {
+        List<T> collisions = new ArrayList<>();
+        for (Map.Entry<String, List<T>> entry : byKey.entrySet()) {
             if (entry.getValue().size() == 1) {
-                ModuleCoordinate coordinate = entry.getValue().get(0);
-                assigned.put(coordinate, coordinate.finalizeSkillName(entry.getKey()));
+                T source = entry.getValue().get(0);
+                assigned.put(source, source.finalizeSkillName(entry.getKey()));
             } else {
                 collisions.addAll(entry.getValue());
             }
