@@ -453,6 +453,34 @@ class ResolveAgentDocsTaskTest {
         assertTrue(Files.readString(otherRoot.resolve("SKILL.md")).contains("name: com-other-core"));
     }
 
+    @Test
+    void resolveAgentDocsOnNonJavaRootProjectSkipsDependencyDiscoveryGracefully() throws IOException {
+        writeFile(projectDir.resolve("settings.gradle"), """
+                rootProject.name = 'consumer'
+                include 'app'
+                """);
+
+        writeFile(projectDir.resolve("build.gradle"), """
+                plugins {
+                    id 'io.github.duckasteroid.agent-docs'
+                }
+                """);
+        writeFile(projectDir.resolve("app/build.gradle"), """
+                plugins {
+                    id 'java-library'
+                }
+                """);
+
+        BuildResult result = runResolve(":resolveAgentDocs", "--info");
+
+        assertNotNull(result.task(":resolveAgentDocs"));
+        assertEquals(TaskOutcome.SUCCESS, result.task(":resolveAgentDocs").getOutcome());
+        assertTrue(result.getOutput().contains(
+                "Configuration 'compileClasspath' not found in project ':'; skipping dependency-based "
+                        + "agent-docs discovery for this project"));
+        assertTrue(result.getOutput().contains("materialized 0 skills"));
+    }
+
     private void writeConsumerBuildFileWithSources(String dependenciesBlock) throws IOException {
         writeFile(projectDir.resolve("build.gradle"), """
                 plugins {

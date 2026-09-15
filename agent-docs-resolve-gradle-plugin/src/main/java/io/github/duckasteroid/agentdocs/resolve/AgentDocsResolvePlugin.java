@@ -92,7 +92,18 @@ public class AgentDocsResolvePlugin implements Plugin<Project> {
             task.getConfigurationName().set(extension.getConfigurationName());
 
             var declaredDependencies = extension.getConfigurationName().map(name -> {
-                Configuration configuration = project.getConfigurations().getByName(name);
+                Configuration configuration = project.getConfigurations().findByName(name);
+                if (configuration == null) {
+                    // Expected for a project with no Java-family plugin applied (e.g. a
+                    // multi-project build's root, applied only for AppliedPluginCollector's
+                    // plugins {} discovery) — skip dependency-based discovery for this project
+                    // rather than failing the whole task (duckAsteroid/agent-docs#4).
+                    project.getLogger().info(
+                            "Configuration '{}' not found in project '{}'; skipping dependency-based "
+                                    + "agent-docs discovery for this project",
+                            name, project.getPath());
+                    return List.<DeclaredDependency>of();
+                }
                 Map<ComponentIdentifier, ModuleCoordinate> directCoordinates =
                         ResolvedDependencyCollector.collectDirectDependencyCoordinates(configuration);
 
