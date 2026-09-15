@@ -5,7 +5,7 @@ This plugin reads the `Agent-Docs` manifest attribute (see [`specification/core-
 ## What It Does
 
 - Adds a `resolveAgentDocs` task.
-- Inspects direct dependencies from the configured classpath (default: `compileClasspath`).
+- Inspects direct dependencies from the configured classpath (default: `compileClasspath`). If that configuration doesn't exist on the project (e.g. this plugin is applied to a non-Java root project purely to discover docs for Gradle plugins applied via `plugins {}` — see below), dependency-based discovery is skipped for that project with an info-level log rather than failing the build.
 - For each dependency, reads the `Agent-Docs` attribute from its own resolved jar's manifest. A dependency with no attribute is skipped entirely — no further resolution of any kind is attempted for it.
 - `Agent-Docs: classpath[:path]` — extracts the docs bundle directly from that same jar, at the default path `agent-docs/` or the declared custom path. No network access needed.
 - `Agent-Docs: maven[:group:artifact:version]` — resolves a separate `<group>:<artifact>:<version>:agent-docs@zip` sidecar (at the dependency's own coordinates, or the explicitly declared ones) and extracts it.
