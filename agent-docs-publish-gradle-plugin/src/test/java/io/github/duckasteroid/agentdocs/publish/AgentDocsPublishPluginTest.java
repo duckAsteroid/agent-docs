@@ -339,6 +339,11 @@ class AgentDocsPublishPluginTest {
                 "Expected jar at explicit artifactId GAV coordinates");
         assertTrue(Files.exists(artifactBasePath.resolve("my-custom-lib-1.2.3-agent-docs.zip")),
                 "Expected agent-docs sidecar at the same explicit artifactId GAV coordinates");
+        try (JarFile jarFile = new JarFile(artifactBasePath.resolve("my-custom-lib-1.2.3.jar").toFile())) {
+            assertEquals("maven:io.github.example:my-custom-lib:1.2.3",
+                    jarFile.getManifest().getMainAttributes().getValue("Agent-Docs"),
+                    "Expected Agent-Docs manifest attribute to name the publication's artifactId, not the project name");
+        }
     }
 
     @Test
