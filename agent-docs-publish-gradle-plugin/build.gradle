@@ -50,7 +50,7 @@ gradlePlugin {
             id = 'io.github.duckasteroid.agent-docs.publish'
             implementationClass = 'io.github.duckasteroid.agentdocs.publish.AgentDocsPublishPlugin'
             displayName = 'Agent Docs Publish Plugin'
-            tags  = ['AI Agent', 'documentation', 'publishing']
+            tags  = ['ai-agent', 'documentation', 'publishing']
             description = 'Packages curated agent docs for a library into a sidecar archive.'
         }
     }

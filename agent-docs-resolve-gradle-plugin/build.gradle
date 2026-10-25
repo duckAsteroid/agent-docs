@@ -49,7 +49,7 @@ gradlePlugin {
             id = 'io.github.duckasteroid.agent-docs'
             implementationClass = 'io.github.duckasteroid.agentdocs.resolve.AgentDocsResolvePlugin'
             displayName = 'Agent Docs Plugin'
-            tags  = ['AI Agent', 'documentation', 'publishing']
+            tags  = ['ai-agent', 'documentation', 'publishing']
             description = 'Resolves dependency sidecars into project-local skill folders and generates per-dependency agent skills'
         }
     }
