@@ -203,13 +203,46 @@ public class AgentDocsPublishPlugin implements Plugin<Project> {
         // Single Agent-Docs attribute per specification/java-conventions.md: bare "classpath"
         // since embedding always uses the conventional default path, or the explicit-coordinate
         // "maven:<gav>" form (rather than a bare "maven" marker) so this keeps working correctly
-        // even if a project's distribution mode changes later.
-        project.getTasks().withType(Jar.class).matching(task -> task.getName().equals("jar")).configureEach(jarTask -> {
-            AgentDocsDistribution mode = extension.getDistribution().get();
-            String coordinates = project.getGroup() + ":" + project.getName() + ":" + project.getVersion();
-            String agentDocsValue = mode == AgentDocsDistribution.EMBEDDED ? "classpath" : "maven:" + coordinates;
-            jarTask.getManifest().attributes(Map.of("Agent-Docs", agentDocsValue));
-        });
+        // even if a project's distribution mode changes later. Resolved lazily so publication
+        // coordinates configured later in the build script (e.g. an overridden artifactId) win.
+        Provider<String> agentDocsValue = project.provider(() ->
+                extension.getDistribution().get() == AgentDocsDistribution.EMBEDDED
+                        ? "classpath"
+                        : "maven:" + sidecarCoordinates(project));
+        project.getTasks().withType(Jar.class).matching(task -> task.getName().equals("jar")).configureEach(jarTask ->
+                jarTask.getManifest().attributes(Map.of("Agent-Docs", agentDocsValue)));
+    }
+
+    /**
+     * Returns the {@code group:artifact:version} the sidecar is actually published under: the
+     * coordinates of the project's {@link MavenPublication} (to which the sidecar is attached),
+     * falling back to the project's own group/name/version when there is none. Using the project
+     * name unconditionally would point consumers at a non-existent artifact whenever a publication
+     * overrides its {@code artifactId}.
+     */
+    private static String sidecarCoordinates(Project project) {
+        String projectCoordinates = project.getGroup() + ":" + project.getName() + ":" + project.getVersion();
+        PublishingExtension publishing = project.getExtensions().findByType(PublishingExtension.class);
+        if (publishing == null) {
+            return projectCoordinates;
+        }
+        List<String> publicationCoordinates = new ArrayList<>(new LinkedHashSet<>(publishing.getPublications()
+                .withType(MavenPublication.class)
+                .stream()
+                .sorted((a, b) -> a.getName().compareTo(b.getName()))
+                .map(publication -> publication.getGroupId() + ":" + publication.getArtifactId() + ":"
+                        + publication.getVersion())
+                .toList()));
+        if (publicationCoordinates.isEmpty()) {
+            return projectCoordinates;
+        }
+        if (publicationCoordinates.size() > 1) {
+            project.getLogger().warn(
+                    "Project '" + project.getPath() + "' has Maven publications with differing coordinates "
+                            + publicationCoordinates + "; the Agent-Docs manifest attribute can name only one, so "
+                            + "using " + publicationCoordinates.get(0) + ".");
+        }
+        return publicationCoordinates.get(0);
     }
 
     /**
